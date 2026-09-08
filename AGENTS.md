@@ -1,33 +1,54 @@
 # AGENTS.md - Agent Directives
 
-This file defines **operating constraints and initial procedures** for AI agents working on this Android codebase.
+Remote-desktop-clients: bVNC, aRDP, aSPICE, Opaque for Android.
+Forked from github.com/iiordanov/remote-desktop-clients; read [README.md](README.md) first for product context.
 
-For system architecture, patterns, and technical details, see the documentation in `docs/`.
+## Project shape
 
-## MANDATORY: PREFLIGHT CHECKLIST
+Multi-module Gradle Android project — **not** the single-module package-by-layer layout the bundled `.opencode/skills/android-module-structure` describes. That skill (and several others under `.opencode/skills/`) was copied from another project (PreDecide2) and is **not applicable here**. Ignore those skills.
 
-> **CRITICAL: DO NOT PROCEED WITH ANY USER REQUEST UNTIL ALL ITEMS BELOW ARE COMPLETED**
->
-> Failure to complete this checklist will result in context loss and incorrect implementation.
+12 Gradle modules (see [settings.gradle](settings.gradle)):
 
-### Phase 1: System Context (REQUIRED)
+| Module               | Plugin            | Notes                                                                                  |
+|----------------------|-------------------|----------------------------------------------------------------------------------------|
+| `remoteClientLib`    | `android-library` | NDK/JNI: FreeRDP + SPICE/GStreamer + VirtViewer. Native build is heavy.                |
+| `pubkeyGenerator`    | `android-library` | SSH keygen UI utility.                                                                  |
+| `bVNC`               | `android-library` | Hosts `App` Application class and **all** shared UI code (bVNC/aRDP/aSPICE/Opaque).    |
+| `common`             | `android-library` | DB + utilities. **Only module with unit tests.**                                        |
+| `bVNC-app`           | `android-application` | Thin wrapper — manifest only; `:bVNC` is the applicationId source.                   |
+| `freebVNC-app`       | `android-application` | Free flavor of bVNC.                                                                 |
+| `aRDP-app`           | `android-application` | Thin wrapper. Manifest reuses `App` from `:bVNC`.                                     |
+| `freeaRDP-app`       | `android-application` | Free flavor.                                                                         |
+| `aSPICE-app`         | `android-application` | Thin wrapper.                                                                        |
+| `freeaSPICE-app`     | `android-application` | Free flavor.                                                                         |
+| `Opaque-app`         | `android-application` | oVirt/RHEV/Proxmox.                                                                   |
+| `CustomVnc-app`      | `android-application` | Programmatically-customizable VNC client. See "Custom clients" below.                  |
+| `remoteClientLib:jni:libs:deps:FreeRDP:client:Android:Studio:freeRDPCore` | `android-library` | Vendored FreeRDP core.                                                            |
 
-You MUST read these files in EXACT order:
+Empty top-level `aRDP/` directory exists from the repo's parent-folder name — **not a Gradle module**.
 
-| #  | File                        | Purpose                        |
-|----|-----------------------------|--------------------------------|
-| 1  | `docs/MASTER.md`            | System overview and doc index  |
-| 2  | `docs/DESIGN_PRINCIPLES.md` | Core architectural principles  |
-| 3  | `docs/ARCHITECTURE.md`      | Layer responsibilities         |
-| 4  | `docs/PATTERNS.md`          | Code patterns and standards    |
+Mostly Java (Views, no Compose); a thin layer of Kotlin utility/protocol classes. No Hilt, no Jetpack Compose, no `androidx.lifecycle.ViewModel`. Patterns differ from the `android-presentation-mvi` / `android-di-hilt` / `android-compose-ui` skills bundled in `.opencode/skills/` — they do not apply.
 
-After completing the core files above, **discover and read** all remaining documentation relevant to your task:
+## Toolchain (mandatory, do not override)
 
-1. **List** `docs/` to discover any additional project-level documents
-2. **List** `docs/features/` to discover feature-specific subsystem documentation
-3. **List** `docs/DECISIONS/` to discover Architecture Decision Records (ADRs)
-4. **Use `docs/MASTER.md`** as the authoritative index — it catalogs all documentation files and contains the glossary of domain terms
-5. **Read** Selectively read additional project-level, feature-level, and ADR documents relevant to your assigned task
+- AGP `8.13.2`, Kotlin `2.2.21` ([build.gradle](build.gradle))
+- Gradle wrapper `8.13` ([gradle/wrapper/gradle-wrapper.properties](gradle/wrapper/gradle-wrapper.properties))
+- **JDK 21 is forced** via `org.gradle.java.home=C:/Users/marco/.jdks/jbr-21.0.11` in [gradle.properties](gradle.properties). The system comment says JBR 21 ships with Android Studio. JDK 25 fails — AGP cannot read its bytecode. Use JBR 21.
+- `compileSdkVersion=36`, `targetSdkVersion=36`, `minSdkVersion=21` by default ([build.gradle](build.gradle)).
+- `local.properties` is checked in (ignored-by-Android-Studio's gitignore but committed here): points at `C:\Users\marco\AppData\Local\Android\Sdk`. Update for your own machine.
+
+## Native dependencies
+
+`remoteClientLib` and friends need FreeRDP/SPICE/GStreamer. Two paths:
+
+1. **Prebuilt (fast):** `./download-prebuilt-dependencies.sh` then `./bVNC/prepare_project.sh --skip-build libs nopath`.
+2. **From scratch (slow, hours):** `./bVNC/prepare_project.sh <PROJECT> <ANDROID_SDK>` after installing Ubuntu deps `gnome-common gobject-introspection nasm gtk-doc-tools python-is-python3` and Android NDK/CMake.
+
+Custom VNC clients: see README §III. Requires editing `gradle.properties` (`CUSTOM_VNC_APP_NAME`, `CUSTOM_VNC_APP_ICON`, `CUSTOM_VNC_APP_NAMESPACE`) plus a yaml config in `bVNC/src/main/assets/`.
+
+## MCP
+
+[opencode.json](opencode.json) configures `mobile-mcp` for live-device interaction. `ANDROID_HOME` is hard-coded for this machine — adjust if you move.
 
 ## Bug Report Management
 
@@ -126,3 +147,12 @@ Do not run these compile & test scripts in parallel. Each script acquires a Grad
 - **Success**: Prints a single-line message (`Project compiled successfully`, `All tests passed`, or `Tests passed`).
 - **Failure**: Gradle prints the error details (compilation errors or per-test failures with stack traces) and the script exits with a non-zero code — no success message is printed.
 - **Quiet mode**: All scripts pass `--quiet` to `gradlew`, so Gradle's own task logging is suppressed.
+
+
+## Submodules
+
+`remote-desktop-clients-store-metadata/` is a Git submodule (store-listing metadata only). Don't edit its contents from this repo; update upstream and pull.
+
+## Branch / commit policy
+
+Never commit unless the user explicitly asks. Working tree is clean on `master`. Inspect changes with `git diff`/`git status` before any commit. `gitnexus_detect_changes` is the required pre-commit sanity check.
