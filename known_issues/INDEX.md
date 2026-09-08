@@ -6,7 +6,7 @@ This directory contains bug reports for known issues in this codebase.
 
 | ID | Title | Severity | Status |
 |---|---|---|---|
-| [BUG-002](BUG-002-cursor-under-soft-keyboard.md) | RDP-only: cursor travels underneath the soft keyboard instead of the viewport panning to follow it. Diagnostic logging under `RdpViewport` log tag is in place; root-cause not yet identified. | Medium — functional gap on aRDP only | OPEN (diagnostics landed 2026-09-08) |
+| [BUG-002](BUG-002-cursor-under-soft-keyboard.md) | RDP-only: cursor travels underneath the soft keyboard instead of the viewport panning to follow it. Fix landed 2026-09-08; verify on device. | Medium — functional gap on aRDP only | FIXED (2026-09-08) |
 
 
 ## Closed Issues

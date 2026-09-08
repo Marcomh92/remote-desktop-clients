@@ -6,7 +6,6 @@ import android.content.Context;
 import android.os.Build;
 import android.os.Handler;
 import android.os.SystemClock;
-import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 
@@ -18,12 +17,6 @@ import com.undatech.opaque.util.GeneralUtils;
 
 public abstract class RemotePointer {
     private static final String TAG = "RemotePointer";
-    // Dedicated log tag for cursor / viewport diagnostics. Filter with
-    // `adb logcat -s RdpViewport:V` while reproducing BUG-002.
-    private static final String TAG_VIEWPORT = "RdpViewport";
-    // BUG-002: minimum framebuffer-pixel delta before we re-log cursor position.
-    // Cursor can update at touch rate; without a threshold the log floods.
-    private static final int CURSOR_LOG_MIN_DELTA = 8;
 
     public static final int POINTER_DOWN_MASK = 0x8000; // 32768
     public static float DEFAULT_SENSITIVITY = 2.0f;
@@ -110,14 +103,6 @@ public abstract class RemotePointer {
     }
 
     public void setY(int newY) {
-        // BUG-002 diagnostic: log cursor Y on every direct assignment. Cheap;
-        // callers that go through setNewPointerPosition will get the richer
-        // log line with the visibility check instead.
-        int delta = Math.abs(newY - pointerY);
-        if (delta >= CURSOR_LOG_MIN_DELTA) {
-            Log.d(TAG_VIEWPORT, "setY: " + pointerY + " -> " + newY
-                    + " (delta=" + delta + ", X=" + pointerX + ")");
-        }
         pointerY = newY;
     }
 
@@ -125,14 +110,6 @@ public abstract class RemotePointer {
      * Move mouse pointer to specified coordinates.
      */
     public void movePointer(int x, int y) {
-        //android.util.Log.d("RemotePointer", "movePointer");
-        // BUG-002 diagnostic: log the explicit move. "Mouse @" calls this.
-        Log.d(TAG_VIEWPORT, "movePointer: (" + pointerX + "," + pointerY + ")"
-                + " -> (" + x + "," + y + ")"
-                + " visibleW=" + canvas.getVisibleDesktopWidth()
-                + " visibleH=" + canvas.getVisibleDesktopHeight()
-                + " absX=" + canvas.getAbsX()
-                + " absY=" + canvas.getAbsY());
         canvas.invalidateMousePosition();
         pointerX = x;
         pointerY = y;
@@ -144,27 +121,13 @@ public abstract class RemotePointer {
      * If necessary move the pointer to be visible.
      */
     public void movePointerToMakeVisible() {
-        //android.util.Log.d("RemotePointer", "movePointerToMakeVisible");
         if (canvas.getMouseFollowPan()) {
             int absX = canvas.getAbsX();
             int absY = canvas.getAbsY();
             int vW = canvas.getVisibleDesktopWidth();
             int vH = canvas.getVisibleDesktopHeight();
-            int prevPtrX = pointerX;
-            int prevPtrY = pointerY;
             if (pointerX < absX || pointerX >= absX + vW ||
                     pointerY < absY || pointerY >= absY + vH) {
-                // BUG-002 diagnostic: flag the "pointer was off-screen,
-                // about to be re-centered" case. The centering Y is
-                // absY + vH/2 — if vH already excludes the IME (i.e.
-                // recomputeRdpViewport set the visible-desktop height to
-                // the area above the keyboard), this Y is fine. If not,
-                // it lands the cursor under the keyboard.
-                Log.d(TAG_VIEWPORT, "movePointerToMakeVisible: off-screen"
-                        + " ptr=(" + prevPtrX + "," + prevPtrY + ")"
-                        + " abs=(" + absX + "," + absY + ")"
-                        + " vis=(" + vW + "x" + vH + ")"
-                        + " -> center=(" + (absX + vW / 2) + "," + (absY + vH / 2) + ")");
                 movePointer(absX + vW / 2, absY + vH / 2);
             }
         }
@@ -387,8 +350,6 @@ public abstract class RemotePointer {
     protected void setNewPointerPosition(int x, int y) {
         int imageWidth = canvas.getImageWidth();
         int imageHeight = canvas.getImageHeight();
-        int prevX = pointerX;
-        int prevY = pointerY;
         pointerX = x;
         pointerY = y;
         // Do not let mouse pointer leave the bounds of the desktop.
@@ -404,30 +365,5 @@ public abstract class RemotePointer {
         }
         GeneralUtils.debugLog(this.debugLogging, TAG, "Sending absolute mouse event at: " + pointerX +
                 ", " + pointerY + ", pointerMask: " + pointerMask);
-        // BUG-002 diagnostic: log cursor Y with a small delta threshold. We
-        // additionally include the visible-desktop top/bottom so a quick
-        // eyeball of logcat reveals whether the cursor sits inside the
-        // visible area or below it (under the keyboard).
-        int dx = Math.abs(pointerX - prevX);
-        int dy = Math.abs(pointerY - prevY);
-        if (dx >= CURSOR_LOG_MIN_DELTA || dy >= CURSOR_LOG_MIN_DELTA) {
-            int absX = canvas.getAbsX();
-            int absY = canvas.getAbsY();
-            int vW = canvas.getVisibleDesktopWidth();
-            int vH = canvas.getVisibleDesktopHeight();
-            int visTop = absY;
-            int visBot = absY + vH;
-            boolean inVisibleX = (pointerX >= absX) && (pointerX < absX + vW);
-            boolean inVisibleY = (pointerY >= visTop) && (pointerY < visBot);
-            Log.d(TAG_VIEWPORT, "setNewPointerPosition: (" + prevX + "," + prevY + ")"
-                    + " -> (" + pointerX + "," + pointerY + ")"
-                    + " delta=(" + dx + "," + dy + ")"
-                    + " abs=(" + absX + "," + absY + ")"
-                    + " vis=(" + vW + "x" + vH + ")"
-                    + " visRangeY=[" + visTop + ".." + visBot + ")"
-                    + " inVisX=" + inVisibleX
-                    + " inVisY=" + inVisibleY
-                    + " fb=(" + imageWidth + "x" + imageHeight + ")");
-        }
     }
 }

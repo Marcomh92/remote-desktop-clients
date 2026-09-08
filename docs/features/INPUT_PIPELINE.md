@@ -352,8 +352,6 @@ Transitions are driven by `RemoteCanvasActivity.setInputAreaState:1612-1628` and
 
 **Container translation above the IME.** `imeOverlap = max(0, lastImeHeightPx − (rdpFullViewHeight − canvasH))` is the single formula for both window models: if the window did not resize (`canvasH ≈ rdpFullViewHeight`), `imeOverlap ≈ ime` and the container is lifted; if the window did resize (`canvasH ≈ rdpFullViewHeight − ime`), `imeOverlap ≈ 0` and the bottom-gravity container stays put. Replaces the round-1/2 `rdpContainerTranslation` heuristic, which depended on `setSoftInputMode(SOFT_INPUT_ADJUST_RESIZE)` to fire `getWindowVisibleDisplayFrame().bottom`.
 
-**Viewport / cursor diagnostics.** BUG-002 (cursor travels under the soft keyboard) added a dedicated `RdpViewport` log tag at every site that participates in this state machine: the IME insets listener, `recomputeRdpViewport`, `setInputAreaState`, the legacy 19% `relayoutViews` heuristic, `setVisibleDesktopHeight` / `setRdpFullViewHeight` setters, and the `movePanToMakePointerVisible` / `itemCenterMouse` / `setNewPointerPosition` paths. See §12 and `known_issues/BUG-002-cursor-under-soft-keyboard.md`.
-
 **IME-up collapses `KEYBOARD → NONE` but leaves `EXTRA` alone** (so the grid survives the IME hiding); the legacy 3-page pager is suppressed for RDP. The 19% `r.bottom` heuristic in `relayoutViews:550-599` is the fallback for non-RDP flavors and for the RDP container-visibility transitions; the legacy `setVisibleDesktopHeight + relativePan` shrink block at `relayoutViews:514-517` is RDP-gated out (`if (!Utils.isRdp(this))`). Back-press when in `KEYBOARD` or `EXTRA` collapses to `NONE` instead of finishing the Activity (`onBackPressed:1734-1752`).
 
 **Bridging to `onScreenMetaState` (INV-010):** `RdpModifierRowHandler.syncRowStateToKeyboard:308-317` calls `keyboard.clearMetaState()` then `keyboard.onScreen{Ctrl,Alt,Shift,Super}Toggle()` for every modifier where `rowView.isOnOrLocked(...)` is true — the canonical INV-010 pattern, used by both bridges.
@@ -593,32 +591,6 @@ Ranked by likelihood (most likely first).
     - Calls `sendModifierKeys(true)` (`:222-234`) which walks `modifierMap` and sends VKs for any modifiers that need to be added. `shouldSendModifier` suppresses duplicates.
     - Calls `LibFreeRDP.sendKeyEvent(session.getInstance(), vkCode, true)`.
 13. User releases Ctrl. Same flow with `down=false`. `sendModifierKeys(false)` releases any modifiers that should now be released.
-
----
-
-## 12. Viewport / cursor diagnostics (BUG-002)
-
-When the cursor appears to travel under the soft keyboard on aRDP (i.e. `movePanToMakePointerVisible` does not pan the canvas to keep the cursor in view), reproduce the issue with
-`adb logcat -c && adb logcat -s RdpViewport:V` open in a second terminal. The
-dedicated tag is emitted by:
-
-- `RemoteCanvasActivity` — IME insets listener (`imeInsets: rawIme=… guardMax=…`),
-  `recomputeRdpViewport` (consolidated `canvasW / canvasH / rdpFullH / imeH /
-  containerH / usableH / visibleDesktopH / inputArea / softKbdUp / ptrX / ptrY`),
-  `setInputAreaState` (`inputAreaState: NONE -> KEYBOARD (imeH=… softKbdUp=…)`),
-  the legacy 19% `relayoutViews` heuristic (`relayoutViews.softKbd: true ->
-  false` / `false -> true`), and the `itemCenterMouse` handler
-  (`itemCenterMouse: before` + `itemCenterMouse: after landsInVisibleY=…`).
-- `RemoteCanvas` — `setVisibleDesktopHeight` / `setRdpFullViewHeight` (on change)
-  and `movePanToMakePointerVisible` (full `panX/panY/panned/newX/newY/visH/
-  cursorInVisibleX/cursorInVisibleY` snapshot).
-- `RemotePointer` — `setY` and `setNewPointerPosition` (throttled to ≥8 framebuffer-
-  pixel delta) with `inVisX` / `inVisY` flags relative to the canvas visible area,
-  plus `movePointer` and `movePointerToMakeVisible` for the explicit-centering paths.
-
-Per-field-change dedup in each emitter keeps the stream readable during
-reproduction. The full bug report and the suspected root-cause list live at
-`known_issues/BUG-002-cursor-under-soft-keyboard.md`.
 
 ---
 
