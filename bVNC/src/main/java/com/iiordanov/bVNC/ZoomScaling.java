@@ -113,8 +113,9 @@ class ZoomScaling extends AbstractScaling {
         resetMatrix();
         standardizeScaling();
         scaling -= 0.25;
-        if (scaling < minimumScale) {
-            scaling = minimumScale;
+        float floor = computeMinimumScale(activity.getCanvas());
+        if (scaling < floor) {
+            scaling = floor;
         }
         matrix.postScale(scaling, scaling);
         //Log.v(TAG,String.format("before set matrix scrollx = %d scrolly = %d", activity.vncCanvas.getScrollX(), activity.vncCanvas.getScrollY()));
@@ -131,9 +132,10 @@ class ZoomScaling extends AbstractScaling {
 
         float oldScale;
         float newScale = scaleFactor * scaling;
+        float floor = computeMinimumScale(activity.getCanvas());
         if (scaleFactor < 1) {
-            if (newScale < minimumScale) {
-                newScale = minimumScale;
+            if (newScale < floor) {
+                newScale = floor;
             }
         } else {
             if (newScale > 4) {
@@ -193,8 +195,41 @@ class ZoomScaling extends AbstractScaling {
         canvasXOffset = -canvas.getCenteredXOffset();
         canvasYOffset = -canvas.getCenteredYOffset();
         canvas.computeShiftFromFullToView();
-        minimumScale = canvas.getMinimumScale();
+        minimumScale = computeMinimumScale(canvas);
         scaling = minimumScale;
         resolveZoom(canvas);
+    }
+
+    /**
+     * Returns the minimum allowed scale for {@code canvas}'s currently visible viewport.
+     * For RDP this is a "cover" scale (image fills the viewport, no black borders;
+     * hidden parts reachable by panning). For VNC/SPICE/Opaque the original
+     * fit-to-screen minimum is returned unchanged.
+     *
+     * The result is recomputed on every call so that the floor tracks the live
+     * viewport (e.g. when the soft keyboard opens/closes and changes
+     * {@code canvas.visibleHeight}).
+     */
+    private float computeMinimumScale(RemoteCanvas canvas) {
+        if (canvas == null)
+            return 1.f;
+        if (!Utils.isRdp(canvas.getContext()))
+            return canvas.getMinimumScale();
+        int viewW = canvas.getWidth();
+        int viewH = (canvas.visibleHeight > 0) ? canvas.visibleHeight : canvas.getHeight();
+        int fbW = canvas.getImageWidth();
+        int fbH = canvas.getImageHeight();
+        if (fbW <= 0 || fbH <= 0 || viewW <= 0 || viewH <= 0)
+            return canvas.getMinimumScale();
+        return computeCoverScale(fbW, fbH, viewW, viewH);
+    }
+
+    /**
+     * Pure "cover" scale: the smallest scale at which a framebuffer of
+     * {@code fbW}x{@code fbH} fully covers a viewport of
+     * {@code viewW}x{@code viewH} in both dimensions. Visible for testing.
+     */
+    static float computeCoverScale(int fbW, int fbH, int viewW, int viewH) {
+        return Math.max((float) viewW / fbW, (float) viewH / fbH);
     }
 }

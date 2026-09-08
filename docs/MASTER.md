@@ -67,31 +67,33 @@ docs/
 | **`LibFreeRDP`** | Vendored module under `remoteClientLib/jni/libs/deps/FreeRDP/client/Android/Studio/freeRDPCore`. Loads `libfreerdp-android.so`. Only the JNI surface is ours; the C side is upstream. |
 | **`inputExecutor`** | Single-thread high-priority executor on every `RdpCommunicator`. Names the thread `SendRdpInputThread`. All keyboard/mouse output is funneled through it. |
 | **`BaseInputConnection`** | Returned by `RemoteCanvas.onCreateInputConnection`. The single pipe for IME-committed text into the RDP keyboard pipeline. |
-| **Soft modifier** | Sticky on-screen CTRL/ALT/SHIFT/SUPER buttons in the bottom pager of the canvas Activity. State mirrored into `RemoteRdpKeyboard.onScreenMetaState`. |
+| **Soft modifier** | Sticky on-screen CTRL/ALT/SHIFT/SUPER buttons. Two implementations: the legacy 3-page pager (`ExtraKeysView`, VNC/SPICE/Opaque) and the RDP-only `ModifierRowView` (8-key horizontally-scrollable row above the IME). State mirrored into `RemoteRdpKeyboard.onScreenMetaState` via the INV-010 bridge. |
 | **Hardware modifier** | Modifier state inferred from real hardware key events in `RemoteKeyboardState.detectHardwareMetaState`. Used to deduplicate modifier VK sends. |
+| **`InputAreaState`** | RDP-only enum (`NONE` / `KEYBOARD` / `EXTRA`) owned by `RemoteCanvasActivity`. Drives the `@+id/rdpInputAreaContainer` lifecycle and the IME ↔ "123" grid transition. See `features/INPUT_PIPELINE.md` §4.3 and PAT-015. |
+| **`ModifierRowView`** | RDP-only horizontally-scrollable row of 8 keys `[Win, Shift, Ctrl, Alt, Del, Esc, Tab, 123]`. Three-state per modifier (OFF / ON one-shot / LOCKED). 800 ms double-tap = LOCKED. Session-only scroll position. |
+| **`RdpModifierRowHandler`** | RDP-only orchestrator that inflates `rdp_input_area.xml` into `rdpInputAreaContainer`, owns the row + grid, implements the INV-010 bridge, and registers a `RemoteRdpKeyboard.KeyDispatchedListener` for one-shot consumption. |
+| **`KeyDispatchedListener`** | `RemoteRdpKeyboard.KeyDispatchedListener` — fires after every successful non-modifier `ACTION_DOWN` / `ACTION_MULTIPLE` dispatch. Used by `RdpModifierRowHandler` for one-shot consumption. See INV-016. |
+| **Cover scale** | RDP-only zoom minimum: `max(viewW/fbW, viewH/fbH)` (with `viewH = canvas.visibleHeight>0 ? visibleHeight : height`). Used so no black borders appear at minimum zoom even when the IME hides part of the canvas. See PAT-014 / INV-017. |
 | **StrictMode** | `RemoteCanvasActivity.onCreate` calls `StrictMode.ThreadPolicy.permitAll()` because FreeRDP callbacks fire on native threads and would otherwise trip the bitmap-write detection. |
 | **Strictly vendored** | `:remoteClientLib:jni:libs:deps:FreeRDP:client:Android:Studio:freeRDPCore` is in-tree (not a Git submodule). Do not edit; pull upstream and patch. |
 
 ---
 
-## 4. Upcoming focus (aRDP input mod)
+## 4. Recent work (aRDP session-UX parity with the Microsoft RDP app)
 
-Work in progress: **modify mouse behavior, keyboard handling, and modifier keys** while connected to a remote desktop. The hot surface area is:
+The aRDP flavor now ships the Microsoft RDP Android app's session UX: a software keyboard with a floating toggle, a modifier row above the IME with one-shot / lock semantics, a "123" extra-keys page replacing the IME, no black borders at minimum zoom (cover-scale clamp), and touchpad cursor acceleration + fling + right-click long-press + left-drag via double-tap-hold. VNC / SPICE / Opaque are byte-identical to the pre-RDP UX.
 
-| Concern | Primary file(s) |
+Read `docs/features/INPUT_PIPELINE.md` for the canonical map. Key entry points:
+
+| Surface | Where |
 |---|---|
-| RDP mouse wire-format / press-release sequencing | `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteRdpPointer.java` |
-| RDP keyboard pipeline + Ctrl+Alt+Del | `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteRdpKeyboard.java` |
-| Keycode → VK translation, modifier lock/reset | `remoteClientLib/src/main/java/com/undatech/opaque/input/RdpKeyboardMapper.java` |
-| Hardware-scancode modifier dedup | `remoteClientLib/src/main/java/com/undatech/opaque/input/RemoteKeyboardState.java` |
-| MetaState plumbing, sticky on-screen modifiers | `remoteClientLib/src/main/java/com/undatech/opaque/input/RemoteKeyboard.java` |
-| Touch / gesture → pointer dispatch | `bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerGeneric.java` |
-| Sticky modifier buttons and `MetaKeyDialog` | `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RemoteExtraKeysHandler.java` and `bVNC/src/main/java/com/iiordanov/bVNC/dialogs/MetaKeyDialog.java` |
-| Touch event fan-in (USB mouse, IME, touchscreen) | `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteClientsInputListener.kt` |
-| Native JNI sink for input | `RdpCommunicator.processVirtualKey` / `processUnicodeKey` → `LibFreeRDP.sendKeyEvent` / `sendUnicodeKeyEvent` |
-| Settings/preferences wired to input (scroll speed, touchpad sensitivity, input mode) | `bVNC/src/main/res/xml/global_preferences*.xml`, `bVNC/src/main/java/com/iiordanov/bVNC/Constants.java` |
-
-> **`docs/features/INPUT_PIPELINE.md` is the canonical map for this work.** Read it before editing any of the files above.
+| RDP-only state machine (NONE / KEYBOARD / EXTRA) | `bVNC/src/main/java/com/iiordanov/bVNC/input/InputAreaState.java`, `RemoteCanvasActivity.setInputAreaState:1562-1570` |
+| Modifier row + 123 grid + INV-010 bridge | `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/{ModifierRowView,RdpModifierRowHandler,RdpExtraGridPanel}.java`, `bVNC/src/main/res/layout/rdp_input_area.xml` |
+| One-shot modifier consumption hook | `RemoteRdpKeyboard.KeyDispatchedListener:29-38`, `fireKeyDispatchedIfApplicable:118-135` |
+| Cover-scale clamp (RDP zoom minimum) | `ZoomScaling.computeMinimumScale:213-234` |
+| Floating keyboard toggle (drag-vs-tap) | `RemoteCanvasActivity.java:1048-1103`, `onKeyboardToggleButtonClicked:1592-1610` |
+| RDP-only touchpad gestures (fling / long-press=right-click / double-tap-hold=drag) | `TouchInputHandlerTouchpad.setRdp(boolean):78-101`, `ConnectionBean.getDefaultInputMode:183-193` |
+| Cross-flavor pointer bug fix (right/middle drag release) | `RemoteRdpPointer.moveMouseButtonDown:88-92`, `RemoteVncPointer.moveMouseButtonDown:101-104`, `RemoteSpicePointer.moveMouseButtonDown:100-103` |
 
 ---
 

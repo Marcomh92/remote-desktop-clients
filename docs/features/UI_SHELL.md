@@ -206,11 +206,13 @@ The Opaque flavor uses its own `SharedPreferences`-per-connection file instead (
 
 | Z-order | Element | Role |
 |---|---|---|
-| Top | `singleHandOpts` overlay | `RelativeLayout` (gone by default; visible only in `TouchInputHandlerSingleHanded`). Six buttons: `singleDrag`, `singleMiddle`, `singleRight`, `singleScroll`, `singleZoom`, `singleCancel`. |
-| ^ | `extraKeysToolbar` (`ViewPager @id/extraKeysToolbar`) | Bottom pager; 3 pages (SendText / Sticky mods / F-keys). Gone unless extra keys are enabled. |
+| Top | `keyboardToggleButton @+id/keyboardToggleButton` | RDP-only floating button. Default `gone`; shown only when `Utils.isRdp(this)`. Cycle: `NONE → KEYBOARD → EXTRA → NONE`. Drag-vs-tap distinguished by an inline `OnTouchListener` (`RemoteCanvasActivity:1048-1103`); session-only position (no persistence). LAST child of `canvasLayout` to stay on top of the rest. |
+| ^ | `singleHandOpts` overlay | `RelativeLayout` (gone by default; visible only in `TouchInputHandlerSingleHanded`). Six buttons: `singleDrag`, `singleMiddle`, `singleRight`, `singleScroll`, `singleZoom`, `singleCancel`. |
+| ^ | `extraKeysToolbar` (`ViewPager @id/extraKeysToolbar`) | Legacy bottom pager (3 pages: SendText / Sticky mods / F-keys). Suppressed on RDP (`RemoteCanvasActivity.onGlobalLayout:537-541`); kept for VNC/SPICE/Opaque. |
 | ^ | `extraKeysPageIndicator` | Dots under the pager. |
 | ^ | `keyboardIconForAndroidTv` | Animated icon for TV. Gone otherwise. |
 | ^ | `RemoteToolbar @id/toolbar` | Right-side floating action bar. Set as support action bar. ColorPrimary background. |
+| ^ | `rdpInputAreaContainer @+id/rdpInputAreaContainer` | RDP-only `FrameLayout` at bottom-anchored, `gone` by default. Inflated at runtime with `rdp_input_area.xml` (modifier row + "123" extra-keys grid). Visibility is driven by `InputAreaState`. |
 | Bottom | `RemoteCanvas @id/canvas` | The drawing surface, fills parent. |
 
 ### 6.2 Toolbar menu (`bVNC/src/main/res/menu/canvasactivitymenu.xml`)
@@ -234,6 +236,8 @@ The aRDP-specific bookmark editor layout. Top MaterialCardView (nickname, option
 | `bVNC/src/main/res/menu/connectionsetupmenu.xml` | Bookmark editor toolbar: help, save, save-as-copy, reset-defaults (only when editing invisible template) |
 | `bVNC/src/main/res/layout/metakey.xml` | MetaKeyDialog body |
 | `bVNC/src/main/res/layout/canvasactivitymenu.xml` | Canvas toolbar menu |
+| `bVNC/src/main/res/layout/rdp_input_area.xml` | RDP-only modifier row + "123" extra-keys grid; inflated into `rdpInputAreaContainer`. Not present in `layout-large/rdp_input_area.xml` (single layout for all configurations). |
+| `bVNC/src/main/res/layout-large/canvas.xml` | Large-screen variant of `canvas.xml` — byte-identical to the default layout. The RDP-only overlay elements (`keyboardToggleButton`, `rdpInputAreaContainer`) are declared at the same IDs in both. |
 
 ---
 

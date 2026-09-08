@@ -33,6 +33,7 @@ import androidx.annotation.NonNull;
 
 import com.antlersoft.android.dbimpl.NewInstance;
 import com.iiordanov.bVNC.input.TouchInputHandlerDirectSwipePan;
+import com.iiordanov.bVNC.input.TouchInputHandlerTouchpad;
 import com.iiordanov.util.NetworkUtils;
 import com.undatech.opaque.util.GeneralUtils;
 import com.undatech.remoteClientUi.R;
@@ -180,10 +181,15 @@ public class ConnectionBean extends AbstractConnectionBean implements Comparable
     }
 
     private static String getDefaultInputMode(Context context) {
-        String inputMode;
-        inputMode = Utils.querySharedPreferenceString(context, Constants.defaultInputMethodTag,
+        // RDP new-connection default: the touchpad input handler. The Activity-side
+        // fallback in setModes() only kicks in for legacy rows whose INPUTMODE column
+        // was never populated; this branch ensures freshly-created RDP beans get
+        // TOUCHPAD_MODE written straight into the row.
+        if (Utils.isRdp(context)) {
+            return TouchInputHandlerTouchpad.ID;
+        }
+        return Utils.querySharedPreferenceString(context, Constants.defaultInputMethodTag,
                 TouchInputHandlerDirectSwipePan.ID);
-        return inputMode;
     }
 
     private static ScaleType getDefaultScaling(Context context) {

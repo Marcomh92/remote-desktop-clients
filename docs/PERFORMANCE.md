@@ -28,6 +28,7 @@ These are not formally enforced; they are descriptive of current behavior and wh
 | `PER-FRAME-60` | Target reDraw rate | 16.6666 ms (60 Hz) | `RemoteCanvas.java:684` |
 | `PER-FRAME-FALLBACK` | Coalesced invalidate when behind | `100 ms` | `RemoteCanvas.invalidateCanvasRunnable:153` |
 | `PER-MENU-FRAME` | Menu-driven invalidate only | n/a | `RemoteCanvas.reDraw(float...)` |
+| `PER-FLING-TICK` | Touchpad fling tick (RDP-only). Up to ~50 events/s. | `20 ms` | `TouchInputHandlerTouchpad.FLING_TICK_MS=20`, `FLING_DAMP=0.86`, `FLING_NOISE_PX_PER_S=200` |
 
 Touch and key handlers use the same executor (see `DESIGN_PRINCIPLES.md` PAT-003), so the throttle is per channel, not per type.
 
@@ -70,6 +71,7 @@ Touch and key handlers use the same executor (see `DESIGN_PRINCIPLES.md` PAT-003
 - INV-006: bypass `reDraw` and you lose the throttle + native bitmap-copy coordination.
 - INV-003: `UltraCompactBitmapData.updateBitmap` is the single shared bitmap object. Both sides observe it; locking is on `mbitmap`.
 - INV-008: do not reset `hardwareMetaState` from a performance-optimization path without also resetting `onScreenMetaState` — phantom-modifier sends cause double input events.
+- INV-002: `visibleHeight` shrinks when the IME opens but the framebuffer is NOT reallocated. Anything that recomputes from `canvas.getHeight()` (e.g. the zoom floor) will produce black borders at minimum zoom; use `canvas.visibleHeight>0 ? visibleHeight : height` (see INV-017).
 
 ---
 

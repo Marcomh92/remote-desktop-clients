@@ -54,6 +54,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
@@ -79,7 +80,9 @@ import com.iiordanov.bVNC.dialogs.EnterTextDialog;
 import com.iiordanov.bVNC.dialogs.MetaKeyDialog;
 import com.iiordanov.bVNC.extrakeys.ExtraKeysView;
 import com.iiordanov.bVNC.extrakeys.ExtraKeysPagerAdapter;
+import com.iiordanov.bVNC.extrakeys.RdpModifierRowHandler;
 import com.iiordanov.bVNC.input.IgnoringMouseInputListener;
+import com.iiordanov.bVNC.input.InputAreaState;
 import com.iiordanov.bVNC.input.MetaKeyBean;
 import com.iiordanov.bVNC.input.Panner;
 import com.iiordanov.bVNC.input.RemoteCanvasHandler;
@@ -161,6 +164,10 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     float keyboardIconForAndroidTvX = Float.MAX_VALUE;
     IgnoringMouseInputListener ignoringMouseInputListener = new IgnoringMouseInputListener();
     OnTouchViewMover toolbarMover;
+    private ImageButton keyboardToggleButton;
+    private FrameLayout rdpInputAreaContainer;
+    private RdpModifierRowHandler rdpModifierRowHandler;
+    private InputAreaState inputAreaState = InputAreaState.NONE;
     ActionBarPositionSaver toolbarPositionSaver = new ActionBarPositionSaver();
     int xPointerOffset = 0;
     int yPointerOffset = 0;
@@ -287,6 +294,10 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         canvasLayout = findViewById(R.id.canvasLayout);
         canvas = findViewById(R.id.canvas);
         keyboardIconForAndroidTv = findViewById(R.id.keyboardIconForAndroidTv);
+        if (Utils.isRdp(this)) {
+            keyboardToggleButton = findViewById(R.id.keyboardToggleButton);
+            rdpInputAreaContainer = findViewById(R.id.rdpInputAreaContainer);
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             canvas.setDefaultFocusHighlightEnabled(false);
@@ -440,9 +451,21 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         if (r.top == 0 || re.top > 0) {
             if (canvas.getDrawable() != null) {
                 int extraKeysHeight = (extraKeysToolbar != null) ? extraKeysToolbar.getHeight() : 0;
-                int usableHeight = r.bottom - re.top - extraKeysHeight;
+                // For RDP, the new @+id/rdpInputAreaContainer replaces the legacy
+                // extra-keys toolbar as the bottom UI surface that the canvas must
+                // shrink around. Only subtract its height when it has been measured
+                // (container.getHeight() == 0 when visibility was just toggled in
+                // this same pass; the next pass will pick it up).
+                int bottomShrinkHeight = extraKeysHeight;
+                if (Utils.isRdp(this) && rdpInputAreaContainer != null
+                        && rdpInputAreaContainer.getVisibility() == View.VISIBLE) {
+                    int rdpContainerHeight = rdpInputAreaContainer.getHeight();
+                    bottomShrinkHeight = (rdpContainerHeight > 0) ? rdpContainerHeight : 0;
+                }
+                int usableHeight = r.bottom - re.top - bottomShrinkHeight;
                 Log.d(TAG, "onGlobalLayout: Setting VisibleDesktopHeight to: " + usableHeight +
-                        ", extraKeysHeight: " + extraKeysHeight);
+                        ", extraKeysHeight: " + extraKeysHeight +
+                        ", rdpInputAreaHeight: " + bottomShrinkHeight);
                 canvas.setVisibleDesktopHeight(usableHeight);
                 canvas.relativePan(0, 0);
             } else {
@@ -489,6 +512,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                     canvas.invalidate();
                 }
             }
+            // RDP state-machine: only collapse the input area if we're transitioning
+            // out of KEYBOARD. EXTRA (the "extra keys" grid) must survive an IME hide
+            // so toggling the IME back via the row's 123 button keeps the grid state.
+            if (Utils.isRdp(this) && inputAreaState == InputAreaState.KEYBOARD) {
+                setInputAreaState(InputAreaState.NONE);
+            }
             softKeyboardUp = false;
         } else {
             Log.d(TAG, "onGlobalLayout: More than 19% of screen is covered");
@@ -502,9 +531,23 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                     setExtraKeysVisibility(View.GONE, false);
                 } else {
                     Log.d(TAG, "onGlobalLayout: on-screen buttons should be showing");
-                    setExtraKeysVisibility(View.VISIBLE, true);
+                    // RDP keeps its own on-screen surface (@+id/rdpInputAreaContainer);
+                    // the legacy 3-page extra-keys pager stays hidden so it doesn't
+                    // double up above the IME.
+                    if (!Utils.isRdp(this)) {
+                        setExtraKeysVisibility(View.VISIBLE, true);
+                    }
                 }
                 canvas.invalidate();
+            }
+            // RDP state-machine: when the IME comes up, collapse any open EXTRA grid
+            // back to KEYBOARD ("123 replaces the software keyboard" — they are
+            // mutually exclusive on screen). NONE also snaps to KEYBOARD so the
+            // modifier row appears above the IME.
+            if (Utils.isRdp(this) &&
+                    (inputAreaState == InputAreaState.NONE
+                            || inputAreaState == InputAreaState.EXTRA)) {
+                setInputAreaState(InputAreaState.KEYBOARD);
             }
         }
         if (extraKeysToolbar != null) {
@@ -577,6 +620,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         extraKeysToolbar.setTranslationY(diffLayoutKeysPosition);
         if (extraKeysPageIndicator != null)
             extraKeysPageIndicator.setTranslationY(diffLayoutKeysPosition);
+        // RDP: ride the modifier-key row / extra-keys grid container along with the same
+        // offset so it sits directly above the IME. Container visibility is driven by
+        // the input-area state machine; this only sets the translation.
+        if (Utils.isRdp(this) && rdpInputAreaContainer != null) {
+            rdpInputAreaContainer.setTranslationY(diffLayoutKeysPosition);
+        }
         offsetOrRestoreSavedToolbarPosition(r, diffToolbarPosition, standardToolbarPositionX, standardToolbarPositionY);
     }
 
@@ -812,7 +861,18 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
      */
     void setModes() {
         Log.d(TAG, "setModes");
-        setInputHandler(getInputHandlerByName(connection.getInputMode()));
+        String inputMode = connection.getInputMode();
+        // Safety net for legacy rows whose INPUTMODE column was never populated.
+        // Newly-created RDP beans already receive TOUCHPAD_MODE from
+        // ConnectionBean.getDefaultInputMode, so this branch usually hits only
+        // rows imported from older installs or copy-from-template flows that
+        // bypassed the default. We only fall back to the touchpad for RDP when
+        // the stored value is null/empty — never for an explicit TOUCH_ZOOM_MODE
+        // (the previous heuristic overrode users who had picked it deliberately).
+        if ((inputMode == null || inputMode.isEmpty()) && Utils.isRdp(this)) {
+            inputMode = TouchInputHandlerTouchpad.ID;
+        }
+        setInputHandler(getInputHandlerByName(inputMode));
         AbstractScaling.getByScaleType(connection.getScaleMode()).setScaleTypeForActivity(this);
         initializeExtraKeysView();
         try {
@@ -985,6 +1045,63 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 menu.findItem(R.id.itemExtraKeys).setTitle(R.string.extra_keys_enable);
 
             toolbarMover = new OnTouchViewMover(toolbar, handler, toolbarPositionSaver, actionBarHider, hideToolbarDelay);
+            if (Utils.isRdp(this) && keyboardToggleButton != null && handler != null) {
+                // Show the button only on the RDP flavor; the layout defaults it
+                // to gone so bVNC/aSPICE/Opaque don't expose a listener-less icon.
+                keyboardToggleButton.setVisibility(View.VISIBLE);
+                // Inline drag-to-move listener that mirrors OnTouchViewMover's
+                // dX/dY offset + animate().x/y().setDuration(0) pattern, but
+                // dispatches a click on ACTION_UP only when the finger stayed
+                // within the scaled touch slop. OnTouchViewMover returns true
+                // for ACTION_DOWN/MOVE which marks the gesture consumed, so
+                // View.onTouchEvent never runs and performClick() is never
+                // invoked — that's the click-bug this fix replaces. We also
+                // drive the pressed drawable manually so the button gives
+                // immediate touch feedback (View.onTouchEvent is bypassed).
+                final int touchSlop = ViewConfiguration.get(keyboardToggleButton.getContext()).getScaledTouchSlop();
+                final float[] fingerDownXY = new float[2];
+                final float[] dx = new float[1];
+                final float[] dy = new float[1];
+                final boolean[] movedBeyondSlop = new boolean[1];
+                keyboardToggleButton.setOnTouchListener((v, event) -> {
+                    switch (event.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            fingerDownXY[0] = event.getRawX();
+                            fingerDownXY[1] = event.getRawY();
+                            dx[0] = v.getX() - event.getRawX();
+                            dy[0] = v.getY() - event.getRawY();
+                            movedBeyondSlop[0] = false;
+                            v.setPressed(true);
+                            return true;
+                        case MotionEvent.ACTION_MOVE:
+                            if (!movedBeyondSlop[0]) {
+                                float totalDx = event.getRawX() - fingerDownXY[0];
+                                float totalDy = event.getRawY() - fingerDownXY[1];
+                                if (Math.abs(totalDx) > touchSlop || Math.abs(totalDy) > touchSlop) {
+                                    movedBeyondSlop[0] = true;
+                                }
+                            }
+                            if (movedBeyondSlop[0]) {
+                                v.animate().x(event.getRawX() + dx[0])
+                                        .y(event.getRawY() + dy[0])
+                                        .setDuration(0).start();
+                            }
+                            return true;
+                        case MotionEvent.ACTION_UP:
+                            v.setPressed(false);
+                            if (!movedBeyondSlop[0]) {
+                                v.performClick();
+                            }
+                            return true;
+                        case MotionEvent.ACTION_CANCEL:
+                            v.setPressed(false);
+                            return true;
+                        default:
+                            return false;
+                    }
+                });
+                keyboardToggleButton.setOnClickListener(v -> onKeyboardToggleButtonClicked());
+            }
             ImageButton moveButton = new ImageButton(this);
 
             moveButton.setBackgroundResource(R.drawable.ic_all_out_gray_36dp);
@@ -1067,7 +1184,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                     } else if (id == R.id.itemInputDragPanZoomMouse) {
                         inputModeHandlers[i] = new TouchInputHandlerDirectDragPan(this, canvas, remoteConnection, App.debugLog, scrollRate);
                     } else if (id == R.id.itemInputTouchpad) {
-                        inputModeHandlers[i] = new TouchInputHandlerTouchpad(this, canvas, remoteConnection, App.debugLog, scrollRate);
+                        TouchInputHandlerTouchpad touchpad = new TouchInputHandlerTouchpad(this, canvas, remoteConnection, App.debugLog, scrollRate);
+                        // RDP gating: enable Microsoft-RDP-style touchpad gestures
+                        // (fling / long-press=right-click / double-tap-and-hold=drag)
+                        // for this instance. Non-RDP touchpad instances stay legacy.
+                        touchpad.setRdp(Utils.isRdp(this));
+                        inputModeHandlers[i] = touchpad;
                     } else if (id == R.id.itemInputSingleHanded) {
                         inputModeHandlers[i] = new TouchInputHandlerSingleHanded(this, canvas, remoteConnection, App.debugLog, scrollRate);
                     } else {
@@ -1215,6 +1337,23 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 connection.getUseDpadAsArrows()
         );
         canvas.setOnKeyListener(inputListener);
+
+        // WS2 integration: lazily attach the RDP modifier-row handler the
+        // first time we wire up an input handler. By this point the
+        // RemoteRdpKeyboard has been created (in RemoteRdpConnection.initializeConnection
+        // which runs before setModes posts the Runnable that calls us). attach()
+        // bails out for non-RDP flavors and when the container id is missing,
+        // so the null-check here doubles as both gates. We then immediately
+        // call onKeyboardReady() so the dispatched-key listener and extra-keys
+        // grid client are wired in even if the keyboard was not yet available
+        // at attach time (idempotent in either order).
+        if (Utils.isRdp(this) && rdpModifierRowHandler == null) {
+            rdpModifierRowHandler = RdpModifierRowHandler.attach(this,
+                    state -> setInputAreaState(state));
+            if (rdpModifierRowHandler != null) {
+                rdpModifierRowHandler.onKeyboardReady();
+            }
+        }
     }
 
     private void sendSpecialKeyAgain() {
@@ -1231,6 +1370,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     protected void onDestroy() {
         super.onDestroy();
         Log.i(TAG, "onDestroy called.");
+        // Tear down the touchpad RDP gating before closeConnection so any
+        // in-flight fling runnable is cancelled and the post-destroy handler
+        // can't tick into a stale state.
+        if (touchInputHandler instanceof TouchInputHandlerTouchpad) {
+            ((TouchInputHandlerTouchpad) touchInputHandler).setRdp(false);
+        }
         if (remoteConnection != null)
             remoteConnection.closeConnection();
         System.gc();
@@ -1390,6 +1535,80 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             extraKeysHidden = true;
             setExtraKeysVisibility(View.GONE, false);
         }
+        // INV-008: clear on-screen modifier state so a new RDP session does
+        // not inherit Shift/Ctrl/Alt/Win locks from the previous one. The
+        // handler also re-bridges any locked modifiers into the keyboard's
+        // onScreenMetaState; resetAll + clearMetaState covers both paths.
+        if (rdpModifierRowHandler != null) {
+            rdpModifierRowHandler.resetRowState();
+        }
+    }
+
+    /**
+     * Returns the current state of the RDP input area (NONE/KEYBOARD/EXTRA).
+     * Defaults to NONE for non-RDP flavors.
+     */
+    public InputAreaState getInputAreaState() {
+        return inputAreaState;
+    }
+
+    /**
+     * Sets the RDP input-area state machine and synchronizes the
+     * {@code @+id/rdpInputAreaContainer} visibility accordingly. The actual
+     * modifier-row / extra-keys-grid inflation into the container is left to
+     * the WS2 integration pass via the {@link #updateRdpInputAreaVisibility()}
+     * hook.
+     */
+    public void setInputAreaState(InputAreaState newState) {
+        this.inputAreaState = newState == null ? InputAreaState.NONE : newState;
+        // Forward to the modifier-row handler if it's been attached. The
+        // handler owns the modifier-row / extra-keys-grid visibility and the
+        // IME toggling on KEYBOARD<->EXTRA transitions; the activity still
+        // owns the container visibility below.
+        if (rdpModifierRowHandler != null) {
+            rdpModifierRowHandler.onInputAreaStateChanged(this.inputAreaState);
+        }
+        updateRdpInputAreaVisibility();
+    }
+
+    /**
+     * Hook for the WS2 integration pass: shows/hides the
+     * {@code @+id/rdpInputAreaContainer} based on the current
+     * {@link #inputAreaState}. The container is visible for KEYBOARD and EXTRA
+     * and gone for NONE. The modifier-row / extra-keys-grid inflate themselves
+     * into the container; WS2 owns that wiring.
+     */
+    private void updateRdpInputAreaVisibility() {
+        if (!Utils.isRdp(this) || rdpInputAreaContainer == null) {
+            return;
+        }
+        int desired = (inputAreaState == InputAreaState.NONE) ? View.GONE : View.VISIBLE;
+        if (rdpInputAreaContainer.getVisibility() != desired) {
+            rdpInputAreaContainer.setVisibility(desired);
+        }
+    }
+
+    /**
+     * State-machine tap handler for the floating {@code @+id/keyboardToggleButton}.
+     * Behavior:
+     *   - state NONE -> open the IME, state -> KEYBOARD
+     *   - state KEYBOARD or EXTRA -> open the IME, state -> KEYBOARD
+     *     (the 123 toggle on the modifier row swaps IME <-> grid; this button
+     *      always lands on the IME).
+     */
+    private void onKeyboardToggleButtonClicked() {
+        if (!Utils.isRdp(this)) {
+            return;
+        }
+        // Tell the handler to land on the IME (and collapse the extra-keys grid
+        // if it is showing); onBackToKeyboard calls Utils.showKeyboard internally
+        // and requests canvas focus itself, so this method stays the single entry
+        // point for IME-show on this button.
+        if (rdpModifierRowHandler != null) {
+            rdpModifierRowHandler.onBackToKeyboard();
+        } else {
+            setInputAreaState(InputAreaState.KEYBOARD);
+        }
     }
 
     public Connection getConnection() {
@@ -1416,6 +1635,16 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         if (GeneralUtils.isTv(this)) {
             disconnectAndFinishActivity();
             super.onBackPressed();
+        }
+        // RDP: if the input area is showing (modifier row above the IME, or the
+        // "extra keys" grid in EXTRA state), back collapses it before the system
+        // sees the press. When the IME is visible the OS normally consumes back
+        // first (documented user-awareness); this gate covers the EXTRA case and
+        // the IME-already-closed case.
+        if (Utils.isRdp(this) && inputAreaState != InputAreaState.NONE) {
+            hideKeyboard();
+            setInputAreaState(InputAreaState.NONE);
+            return;
         }
         if (inputListener != null) {
             inputListener.onKey(canvas, KeyEvent.KEYCODE_BACK, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK));

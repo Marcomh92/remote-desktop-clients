@@ -20,6 +20,23 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
     protected InputCarriable remoteInput;
     private RdpCommunicator rdpcomm;
 
+    /**
+     * Notified after a non-modifier key has been dispatched through
+     * {@link #processLocalKeyEvent}. Used by the RDP modifier row (one-shot
+     * consumption) to clear its ON (non-locked) modifiers once the next key
+     * event has been sent to the server.
+     */
+    public interface KeyDispatchedListener {
+        void onKeyDispatched();
+    }
+
+    private KeyDispatchedListener keyDispatchedListener;
+
+    /** Set the (single) {@link KeyDispatchedListener}, or {@code null} to detach. */
+    public void setKeyDispatchedListener(KeyDispatchedListener l) {
+        this.keyDispatchedListener = l;
+    }
+
     public RemoteRdpKeyboard(
             RdpCommunicator r, Viewable v, InputCarriable i, Handler h,
             boolean debugLog, boolean preferSendingUnicode
@@ -78,13 +95,42 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
                         keyboardMapper.processAndroidKeyEvent(event, isRepeat);
                     }
                 }
+                fireKeyDispatchedIfApplicable(keyCode, evt);
                 return true;
             } else {
                 // Send the key to be processed through the KeyboardMapper.
-                return keyboardMapper.processAndroidKeyEvent(evt, isRepeat);
+                boolean handled = keyboardMapper.processAndroidKeyEvent(evt, isRepeat);
+                fireKeyDispatchedIfApplicable(keyCode, evt);
+                return handled;
             }
         } else {
             return false;
+        }
+    }
+
+    /**
+     * Fires {@link KeyDispatchedListener#onKeyDispatched()} exactly once per consumed keypress:
+     * only on ACTION_DOWN / ACTION_MULTIPLE, only for non-modifier keycodes, and only on the
+     * "successful dispatch" paths (after {@link RdpKeyboardMapper#processAndroidKeyEvent} returns,
+     * or after the per-character IME path). The ACTION_UP replay uses {@code lastDownMetaState},
+     * so listeners do not need to see it.
+     */
+    private void fireKeyDispatchedIfApplicable(int keyCode, KeyEvent evt) {
+        if (keyDispatchedListener == null || evt == null) return;
+        int action = evt.getAction();
+        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_MULTIPLE) return;
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_SHIFT_LEFT:
+            case KeyEvent.KEYCODE_SHIFT_RIGHT:
+            case KeyEvent.KEYCODE_CTRL_LEFT:
+            case KeyEvent.KEYCODE_CTRL_RIGHT:
+            case KeyEvent.KEYCODE_ALT_LEFT:
+            case KeyEvent.KEYCODE_ALT_RIGHT:
+            case KeyEvent.KEYCODE_META_LEFT:
+            case KeyEvent.KEYCODE_META_RIGHT:
+                return;
+            default:
+                keyDispatchedListener.onKeyDispatched();
         }
     }
 

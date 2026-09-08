@@ -118,6 +118,18 @@ inputHandler.onTouchEvent(MotionEvent)   // selected from inputModeHandlers (Tou
 | USB mouse / trackball | `handleMouseActions:174-283` | Maps `MotionEvent.BUTTON_PRIMARY/SECONDARY/TERTIARY`, `AXIS_VSCROLL`, `AXIS_HSCROLL` |
 | Hardware volume key scroll | `RemotePointer.hardwareButtonsAsMouseEvents` `:153-156` → `scrollMouse:173-186` | Repeating `scrollUp/Down` via `MouseScroller` runnable, 100 ms |
 
+### 2.2.1 Touchpad-specific gestures (RDP only)
+
+`bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerTouchpad.java` extends the generic handler with three gestures that match the Microsoft RDP Android app. They are gated by `setRdp(boolean)` (`:78-101`); non-RDP touchpad sessions keep the legacy behaviour.
+
+| Gesture | Where | Wire mapping |
+|---|---|---|
+| Cursor fling (release velocity → decaying tick) | `onFling:199-230` + inner `Flinger` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_DAMP=0.86` per tick, `FLING_NOISE_PX_PER_S=200` floor → up to ~50 events/s. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Cancels on new touch-down. |
+| Long-press = right-click while finger is down | `onLongPress:264-279` | `pointer.rightButtonDown(pressX, pressY, meta)` → `rightDragMode=true`. Release is sent at the press position (`longPressReleaseX/Y`) when the finger lifts, mirroring Microsoft RDP. `onScroll` is suppressed during `rightDragMode`. |
+| Double-tap-and-hold = left-drag | `onDoubleTap:296-322` + `pendingDoubleTapCommit` (`:51`) | First tap fires immediately via `performTapClick`. A 180 ms commit window waits; if the finger lifts before it (`doubleTapFingerUp`), the second tap becomes another click; if it stays down past the window, `dragMode=true` and `pointer.leftButtonDown(pressX, pressY, meta)` arms the drag. |
+
+`TouchInputHandlerTouchpad.setRdp(true)` is called from `RemoteCanvasActivity.setInputHandler` (`:1351`) and `setRdp(false)` from `onDestroy` (`:1376-1378`) so the gating reflects the live flavor. New RDP connections default to touchpad via `ConnectionBean.getDefaultInputMode` (`:183-193`).
+
 ### 2.3 Pointer dispatch — `RemoteRdpPointer`
 
 `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteRdpPointer.java:11-134`. Subclass of `RemotePointer` (`bVNC/.../RemotePointer.java`) which extends `com.undatech.opaque.input.RemotePointer`.
@@ -187,12 +199,12 @@ moveMouseButtonUp(xn, yn, m)     -> sends MOVE
 | Class | Selects via `RemoteCanvasActivity.getInputHandlerById:1054-1081` | Behavior |
 |---|---|---|
 | `TouchInputHandlerGeneric` (abstract base) | default | Pan + tap + drag + scroll; described above |
-| `TouchInputHandlerTouchpad` | `TOUCHPAD_MODE` | Single-finger drag = relative mouse move. Sets `pointer.setRelativeEvents(true)`. |
+| `TouchInputHandlerTouchpad` | `TOUCHPAD_MODE` | Single-finger drag = relative mouse move. Sets `pointer.setRelativeEvents(true)`. **Default for new RDP connections.** RDP-only gestures (fling / long-press=right-click / double-tap-hold=drag) gated by `setRdp(boolean)`; see §2.2.1. |
 | `TouchInputHandlerDirectDragPan` | `itemInputDragPanZoomMouse` | Single-finger drag = absolute mouse move (pan + tap) |
 | `TouchInputHandlerDirectSwipePan` | `itemInputTouchPanZoomMouse` | Two-finger pan; one-finger absolute move |
 | `TouchInputHandlerSingleHanded` | `itemInputSingleHanded` | Single-handed overlay buttons (`singleHandOpts`); no direct canvas touch dispatch |
 
-Selection is persisted in `Constants.selectedInputMethodTag` via `RemoteCanvasActivity.setInputMode:1186-1205`.
+Selection is persisted in `Constants.selectedInputMethodTag` via `RemoteCanvasActivity.setInputMode:1186-1205`. For new RDP connections, `ConnectionBean.getDefaultInputMode:183-193` writes `TOUCHPAD_MODE` straight into the row; legacy rows (where `INPUTMODE` was never populated) take the Activity-side fallback at `RemoteCanvasActivity.setModes`.
 
 ---
 
@@ -279,7 +291,9 @@ The IME is shown/hidden via `Utils.showKeyboard` / `Utils.hideKeyboard` (`Utils.
 
 ---
 
-## 4. Modifier keys — the focus area for upcoming work
+## 4. Modifier keys
+
+The aRDP fork ships a **new RDP-only modifier row** that replaces the legacy 3-page extra-keys pager on the RDP flavor. VNC/SPICE/Opaque continue using the legacy pager unchanged.
 
 ### 4.1 Mask constants
 
@@ -290,7 +304,7 @@ CTRL_MASK   = KeyEvent.META_CTRL_LEFT_ON        // :54
 SHIFT_MASK  = KeyEvent.META_SHIFT_LEFT_ON       // :57
 ALT_MASK    = KeyEvent.META_ALT_LEFT_ON         // :58
 SUPER_MASK  = KeyEvent.META_META_LEFT_ON        // :59
-RCTRL_MASK  = KeyEvent.META_CTRL_RIGHT_ON       // :60
+RCTRL_MASK  = KeyEvent.META_CTRL_RIGHT_ON        // :60
 RSHIFT_MASK = KeyEvent.META_SHIFT_RIGHT_ON      // :61
 RALT_MASK   = KeyEvent.META_ALT_RIGHT_ON        // :62
 RSUPER_MASK = KeyEvent.META_META_RIGHT_ON       // :63
@@ -303,12 +317,42 @@ PC scancodes `SCAN_LEFTCTRL=29, SCAN_RIGHTCTRL=97, SCAN_LEFTALT=56, SCAN_RIGHTAL
 | Variable | Class | Set by | Reset by |
 |---|---|---|---|
 | `hardwareMetaState` | `RemoteKeyboardState` on `RdpCommunicator.remoteKeyboardState` | `detectHardwareMetaState(KeyEvent)` per-key | Never explicitly except for the per-key delta read path |
-| `onScreenMetaState` | `RemoteRdpKeyboard` (per-flavor keyboard) | `onScreen{Ctrl,Alt,Shift,Super}Toggle/Off` (`:114-199`) | `clearMetaState()` (`:213-215`) — called from `ExtraKeysPagerAdapter.syncKeyboardModifierState` only |
+| `onScreenMetaState` | `RemoteRdpKeyboard` (per-flavor keyboard) | `onScreen{Ctrl,Alt,Shift,Super}Toggle/Off` (`:114-199`) | `clearMetaState()` (`:213-215`) — called from both `ExtraKeysPagerAdapter.syncKeyboardModifierState` (legacy pager) and `RdpModifierRowHandler.syncRowStateToKeyboard` (RDP row) |
 | `remoteKeyboardMetaState` | `RemoteKeyboardState` | `updateRemoteMetaState(...)` (`:216-222`) | `RdpCommunicator.close` (only resets session, not state) |
 
-### 4.3 On-screen sticky modifier UI
+### 4.3 RDP-only modifier row + "123" extra-keys grid
 
-`bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ExtraKeysView.java` — the middle page of the bottom pager in `canvas.xml`. State in `SpecialButton` (`bVNC/.../extrakeys/SpecialButton.java:31-35`) and `SpecialButtonState.java`.
+The RDP flavor hosts its own modifier UI inside `rdpInputAreaContainer` (`bVNC/src/main/res/layout/rdp_input_area.xml`):
+
+| Element | Role |
+|---|---|
+| `ModifierRowView` | Horizontally-scrollable row of 8 keys in order: `[Win, Shift, Ctrl, Alt, Del, Esc, Tab, 123]`. See `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ModifierRowView.java:61-361`. |
+| `RdpExtraGridPanel` | `ExtraKeysView`-based grid (ESC/F1-F6/DEL, TAB/F7-F12/BKSP, HOME/END/PGUP/PGDN/INS/LEFT/DOWN/RIGHT). Toggled by the `123` button. See `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpExtraGridPanel.java:43-106`. |
+| `RdpModifierRowHandler` | Orchestrator. Inflates the layout into the activity's container, owns the row+grid, bridges modifier state, consumes one-shot modifiers on dispatch. See `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpModifierRowHandler.java:71-406`. |
+
+**Three-state per modifier:** OFF / ON (one-shot, consumed by next dispatched key) / LOCKED (survives consumption, tap to release). The 800 ms double-tap window is the same one used by `RdpKeyboardMapper.checkToggleModifierLock` (`ModifierRowView.DOUBLE_TAP_WINDOW_MS`).
+
+**State machine for the input-area itself:** `InputAreaState` enum (`bVNC/src/main/java/com/iiordanov/bVNC/input/InputAreaState.java`) with three values:
+
+| State | Visible surface |
+|---|---|
+| `NONE` | No input area. Container hidden. |
+| `KEYBOARD` | Software IME + modifier row above it. |
+| `EXTRA` | Extra-keys grid + modifier row above it (IME hidden). |
+
+Transitions are driven by `RemoteCanvasActivity.setInputAreaState:1562-1570` and gated by `Utils.isRdp(this)` — non-RDP flavors never enter the state machine. RDP-only `relayoutViews` branches at `RemoteCanvasActivity.java:454-540, 626-627`: IME-up collapses `KEYBOARD → NONE` but leaves `EXTRA` alone (so the grid survives the IME hiding); the legacy 3-page pager is suppressed for RDP. Viewport shrinks subtract the container's measured height so the canvas keeps its `visibleHeight` honest. The container is translated above the IME (`rdpInputAreaContainer.setTranslationY(diffLayoutKeysPosition)`). Back-press when in `KEYBOARD` or `EXTRA` collapses to `NONE` instead of finishing the Activity (`onBackPressed:1644-1646`).
+
+**Bridging to `onScreenMetaState` (INV-010):** `RdpModifierRowHandler.syncRowStateToKeyboard:308-317` calls `keyboard.clearMetaState()` then `keyboard.onScreen{Ctrl,Alt,Shift,Super}Toggle()` for every modifier where `rowView.isOnOrLocked(...)` is true — the canonical INV-010 pattern, used by both bridges.
+
+**One-shot consumption hook:** `RemoteRdpKeyboard.KeyDispatchedListener` (`:29-38, 118-135`) fires after every non-modifier `ACTION_DOWN`/`ACTION_MULTIPLE` dispatch. `RdpModifierRowHandler` registers itself in `attachKeyboardIfAvailable:274-286` and its `onKeyDispatched:351-355` calls `rowView.consumeOnModifiers()`, which clears ON (non-locked) modifiers and re-bridges the remaining LOCKED ones. Pointers do **not** consume modifiers.
+
+**Reset on disconnect (INV-008, RDP-side fix):** `RdpModifierRowHandler.resetRowState:228-234` clears every row modifier AND calls `keyboard.clearMetaState()`. `RemoteCanvasActivity.hideKeyboardAndExtraKeys` wires it into the disconnect path. The legacy `clearMetaState()` call in `RemoteConnection.closeConnection` (the only pre-existing reset) is retained.
+
+**Floating keyboard toggle button (RDP-only):** `keyboardToggleButton` (`@+id/keyboardToggleButton`, last child of `canvasLayout` for top z-order) starts `gone`, shown only when `Utils.isRdp(this)`. Drag-vs-tap is distinguished by an inline `OnTouchListener` that moves the View on `ACTION_MOVE` once finger motion exceeds `getScaledTouchSlop()` and dispatches `performClick()` on `ACTION_UP` otherwise (`RemoteCanvasActivity:1048-1103`). Position is session-only (no SharedPreferences). The button cycles `NONE → KEYBOARD → EXTRA → NONE` via `onKeyboardToggleButtonClicked:1592-1610`.
+
+### 4.4 Legacy on-screen sticky modifier pager (VNC / SPICE / Opaque only)
+
+`bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ExtraKeysView.java` — the middle page of the bottom pager in `canvas.xml`. State in `SpecialButton` (`bVNC/.../extrakeys/SpecialButton.java:31-35`) and `SpecialButtonState.java`. On RDP the pager stays hidden (see §4.3), so this path is no longer the canonical entry point.
 
 The mapping is built in `ExtraKeysPagerAdapter.java:106-122`:
 
@@ -324,11 +368,9 @@ With `setSpecialButtonsChangeListener(this::syncKeyboardModifierState)`.
   2. Calls `buildMetaState` (`:79-87`) OR'ing `META_*_ON | META_*_LEFT_ON` for each active modifier.
   3. Synthesizes a `KeyEvent` with that metaState and dispatches via `remoteKeyboard.processLocalKeyEvent(...)`.
 
-- `ExtraKeysPagerAdapter.syncKeyboardModifierState(view)` (`:147-155`):
-  1. `keyboard.clearMetaState()` — `onScreenMetaState = 0`.
-  2. For each active CTRL/ALT/SHIFT/SUPER, call `keyboard.onScreen{Ctrl,Alt,Shift,Super}Toggle()`.
+- `ExtraKeysPagerAdapter.syncKeyboardModifierState(view)` (`:147-155`) is the legacy INV-010 bridge — same `clearMetaState` + `onScreen*Toggle` sequence.
 
-### 4.4 Double-tap-to-lock
+### 4.5 Double-tap-to-lock (both modifier UIs)
 
 `RdpKeyboardMapper.processToggleButton(int keycode)` (`:622-662`) — handles the on-screen CTRL/ALT/SHIFT/WIN toggles. Double-tap within **800 ms** = lock the modifier ON (`checkToggleModifierLock:712-730`):
 
@@ -338,9 +380,9 @@ if (lastModifierTime + 800 > now)  { lastModifierTime = 0;    return true; }   /
 else                               { lastModifierTime = now;  return false; }
 ```
 
-Locked modifiers are preserved by `resetModifierKeysAfterInput` (`:668-688`); only `(!isLocked || force)` paths release them. `clearlAllModifiers()` (`:664-666`) passes `force=true` — this is the canonical reset path that is currently **unused** (INV-009).
+`ModifierRowView` uses the same 800 ms window inline (`DOUBLE_TAP_WINDOW_MS = 800L`). Locked modifiers are preserved by `resetModifierKeysAfterInput` (`:668-688`); only `(!isLocked || force)` paths release them. `clearlAllModifiers()` (`:664-666`) passes `force=true` — the canonical reset path that remains unused outside the `RemoteConnection.closeConnection` site.
 
-### 4.5 `convertEventMetaState` — `KeyEvent.META_*` → internal masks
+### 4.6 `convertEventMetaState` — `KeyEvent.META_*` → internal masks
 
 `RemoteKeyboard.convertEventMetaState(KeyEvent event, int eventMetaState)` (`:285-371`):
 
@@ -348,11 +390,11 @@ Locked modifiers are preserved by `resetModifierKeysAfterInput` (`:668-688`); on
 - **`META_ALT_LEFT_ON` is ignored** for events from a real hardware keyboard or when `isUnicode` is true (`:301-314`). This is so that the **AltGr** symbol entry on European keyboards still produces characters. Any refactor must keep this exception.
 - Right-side modifier bits clear their corresponding left-side mask (`:328, 341, 354, 367`).
 
-### 4.6 `shouldDropModifierKeys`
+### 4.7 `shouldDropModifierKeys`
 
 `RemoteKeyboard.shouldDropModifierKeys(KeyEvent)` (`:391-416`) drops `KEYCODE_*_LEFT/RIGHT` modifier events when `isNoQwertyKbd(context)` — i.e., when the event originates from a virtual/touchscreen keyboard and would generate noise on the remote.
 
-### 4.7 `Ctrl+Alt+Del` emulation — special-cased
+### 4.8 `Ctrl+Alt+Del` emulation — special-cased
 
 `RemoteRdpKeyboard.sendMetaKey(MetaKeyBean meta)` (`:91-135`) — branches on `meta.getKeySym()`. For `MetaKeyBean.keyCtrlAltDel` (`:124-131`):
 
@@ -366,7 +408,7 @@ rfb.writeKeyEvent(0, savedMetaState, false);
 
 The TODO comment at `:125` ("I should not need to treat this specially anymore") hints the special casing is on a hit list. The chain is selected from menu `R.id.itemCtrlAltDel` (`RemoteCanvasActivity.java:1148-1150`) and from `MetaKeyDialog.sendCurrentKey` (`MetaKeyDialog.java:494-514`).
 
-### 4.8 `MetaKeyDialog`
+### 4.9 `MetaKeyDialog`
 
 `bVNC/src/main/java/com/iiordanov/bVNC/dialogs/MetaKeyDialog.java:69-659` — the dialog launched from menu `itemSpecialKeys`. Four checkboxes (Shift/Ctrl/Alt/Super at line `:251-254`) let the user define a `MetaKeyBean` that is persisted in SQLCipher. To send:
 
@@ -408,6 +450,7 @@ Layout: `bVNC/src/main/res/layout/metakey.xml`.
 | `rotateDpad` | Per-connection bool | false | `Constants.rotateDpad` |
 | `layoutMap` | Per-connection keyboard layout | `English (US)` | `ConnectionBean.LAYOUTMAP` |
 | `rAltAsIsoL3Shift` | Treat right-Alt as ISO L3 Shift (VNC overlay) | `true` | `global_preferences_vnc.xml:5` |
+| `defaultInputMethod` | Per-flavor input-mode default. **For RDP new connections**, `ConnectionBean.getDefaultInputMode:183-193` returns `TOUCHPAD_MODE` (touchpad with RDP-only gestures) instead of the SharedPreferences default. Stored `INPUTMODE` values are not migrated. | RDP touchpad, otherwise swipe-pan | `Constants.defaultInputMethodTag` |
 
 `Constants.scrollSpeed` → `(slider+1)/7f` is consumed in:
 - `RemoteCanvasActivity.getScrollRate():1106-1109` → `scrollRate` passed into each `TouchInputHandler` constructor
@@ -440,42 +483,52 @@ Ranked by likelihood (most likely first).
 1. `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteRdpPointer.java`
    - `sendPointerEvent:107-134` (modifier piggy-back, prev-pointer-mask clearing)
    - `sendButtonDownOrMoveButtonDown:34-40`
+   - `moveMouseButtonDown:88-92` — sticky LEFT/RIGHT/MIDDLE preserved from `prevPointerMask`
    - `releaseButton:100-105`
    - `scrollLeft/scrollRight:73-80` — currently no-op; you may want to add horizontal scroll via `LibFreeRDP.sendCursorEvent` with horizontal wheel flags.
 2. `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteRdpKeyboard.java`
-   - `processLocalKeyEvent:36-89`
-   - `sendMetaKey:91-119` (Ctrl+Alt+Del special case — file ends at line 120)
-3. `remoteClientLib/src/main/java/com/undatech/opaque/input/RdpKeyboardMapper.java`
+   - `processLocalKeyEvent:53-109`
+   - `sendMetaKey:137-181` (Ctrl+Alt+Del special case)
+   - `KeyDispatchedListener:29-38` + `setKeyDispatchedListener:36-38` + `fireKeyDispatchedIfApplicable:118-135` — one-shot consumption hook used by the RDP modifier row.
+3. `bVNC/src/main/java/com/iiordanov/bVNC/input/InputAreaState.java` — RDP-only `NONE` / `KEYBOARD` / `EXTRA` enum.
+4. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ModifierRowView.java` — horizontally-scrollable row of 8 keys; OFF/ON/LOCKED per modifier; 800 ms double-tap = LOCKED.
+5. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpModifierRowHandler.java` — orchestrator (RDP-only). `attach/onKeyboardReady/onInputAreaStateChanged/resetRowState/onKeyDispatched/syncRowStateToKeyboard`.
+6. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpExtraGridPanel.java` — "123" extra-keys grid (F-keys + navigation).
+7. `bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerTouchpad.java` — `setRdp(boolean):78-101`; fling (`Flinger` inner class), `onLongPress:264-279` right-click-while-down, `onDoubleTap:296-322` double-tap-hold = drag.
+8. `remoteClientLib/src/main/java/com/undatech/opaque/input/RdpKeyboardMapper.java`
    - `keymapAndroid[]` initialization at `:241-444`
    - `processAndroidKeyEvent:458-534`
    - `processToggleButton:622-662`, `resetModifierKeysAfterInput:668-688`, `clearlAllModifiers:664-666`, `checkToggleModifierLock:712-730`
-4. `remoteClientLib/src/main/java/com/undatech/opaque/input/RemoteKeyboardState.java`
+9. `remoteClientLib/src/main/java/com/undatech/opaque/input/RemoteKeyboardState.java`
    - `detectHardwareMetaState:36-192`
    - `shouldSendModifier:194-214`
    - `updateRemoteMetaState:216-222`
-5. `remoteClientLib/src/main/java/com/undatech/opaque/input/RemoteKeyboard.java`
-   - `convertEventMetaState:285-371`
-   - `shouldDropModifierKeys:391-416`
-   - `onScreen{Ctrl,Alt,Shift,Super}{Toggle,Off}:114-199`
-   - `clearMetaState:213-215`, `getMetaState:201-203`, `lastDownMetaState:80`
-6. `remoteClientLib/src/main/java/com/undatech/opaque/RdpCommunicator.java`
-   - `writePointerEvent:156-167`
-   - `writeKeyEvent:179-187`
-   - `sendModifierKeys:222-234`
-   - `processVirtualKey:239-251`
-   - `processUnicodeKey:263-274`
-   - `inputExecutor:62-69`, `sleepBetweenInputEvents:289-294`
-7. `bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerGeneric.java`
-   - `handleMouseActions:174-283`
-   - `sendScrollEvents:288-310`
-   - `onSingleTapConfirmed/onDoubleTap/onLongPress:316-369`
-   - `dragMode` / `rightDragMode` / `middleDragMode` flags at `:58-67`
-8. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RemoteExtraKeysHandler.java:60-87`
-9. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ExtraKeysPagerAdapter.java:147-155`
-10. `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteClientsInputListener.kt:52-152`
-11. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java:1207-1218`, `:745-756`, `:1148-1150`, `:1117-1179`
-12. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvas.java:823-832`, `:738-744`, `:733-735`
-13. `bVNC/src/main/java/com/iiordanov/bVNC/dialogs/MetaKeyDialog.java:251-254`, `:444-492`, `:494-514`, `:637-658`
+10. `remoteClientLib/src/main/java/com/undatech/opaque/input/RemoteKeyboard.java`
+    - `convertEventMetaState:285-371`
+    - `shouldDropModifierKeys:391-416`
+    - `onScreen{Ctrl,Alt,Shift,Super}{Toggle,Off}:114-199`
+    - `clearMetaState:213-215`, `getMetaState:201-203`, `lastDownMetaState:80`
+11. `remoteClientLib/src/main/java/com/undatech/opaque/RdpCommunicator.java`
+    - `writePointerEvent:156-167`
+    - `writeKeyEvent:179-187`
+    - `sendModifierKeys:222-234`
+    - `processVirtualKey:239-251`
+    - `processUnicodeKey:263-274`
+    - `inputExecutor:62-69`, `sleepBetweenInputEvents:289-294`
+12. `bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerGeneric.java`
+    - `handleMouseActions:174-283`
+    - `sendScrollEvents:288-310`
+    - `onSingleTapConfirmed/onDoubleTap/onLongPress:316-369`
+    - `dragMode` / `rightDragMode` / `middleDragMode` flags at `:58-67`
+13. `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteVncPointer.java` + `RemoteSpicePointer.java` — `moveMouseButtonDown` (`:101-104` VNC, `:100-103` SPICE) preserves sticky LEFT/RIGHT/MIDDLE from `prevPointerMask` (cross-flavor defect fix).
+14. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RemoteExtraKeysHandler.java:60-87` (legacy VNC/SPICE/Opaque pager)
+15. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ExtraKeysPagerAdapter.java:147-155` (legacy INV-010 bridge)
+16. `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteClientsInputListener.kt:52-152`
+17. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java` — `setInputAreaState:1562-1570`, `setInputAreaContainerVisibility:1582-1588`, `onKeyboardToggleButtonClicked:1592-1610`, `setInputHandler:1350-1356` (RDP handler attach), `keyboardToggleButton` inline drag-vs-tap listener `:1048-1103`, RDP-only `relayoutViews` branches at `:454-540, 626-627`, `onBackPressed:1644-1646`, `setModes` touchpad fallback at `:866-867`.
+18. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvas.java:823-832`, `:738-744`, `:733-735`
+19. `bVNC/src/main/java/com/iiordanov/bVNC/dialogs/MetaKeyDialog.java:251-254`, `:444-492`, `:494-514`, `:637-658`
+20. `bVNC/src/main/java/com/iiordanov/bVNC/ZoomScaling.java:213-234` — RDP-only `computeMinimumScale` cover-scale clamp.
+21. `bVNC/src/main/java/com/iiordanov/bVNC/ConnectionBean.java:183-193` — `getDefaultInputMode` writes `TOUCHPAD_MODE` for new RDP connections.
 
 ---
 
@@ -486,11 +539,15 @@ Ranked by likelihood (most likely first).
 - INV-001 — every input event goes through `RdpCommunicator.inputExecutor`. Do not call `LibFreeRDP.sendKeyEvent` etc. from elsewhere.
 - INV-003 — `UltraCompactBitmapData.updateBitmap` is `synchronized (mbitmap)`. Don't touch that lock.
 - INV-006 — frame repaint throttle; bypass it and native bitmap-copy contention appears.
-- INV-008 — modifier state leak on disconnect/reconnect. Fix must call `clearMetaState()` and reset both `hardwareMetaState` and `remoteKeyboardMetaState` (or unify them). `clearlAllModifiers()` exists as the reset entry point.
-- INV-010 — sticky-modifier ↔ keyboard mirroring only via `ExtraKeysPagerAdapter.syncKeyboardModifierState`.
+- INV-008 — on-screen modifier state MUST be cleared on disconnect. For the RDP modifier row the path is `RdpModifierRowHandler.resetRowState()` (called from `RemoteCanvasActivity.hideKeyboardAndExtraKeys`); VNC/SPICE/Opaque retain the older `RemoteConnection.closeConnection` → `keyboard.clearMetaState()` site. `hardwareMetaState` and `remoteKeyboardMetaState` still leak across reconnects — that is the remaining gap.
+- INV-010 — sticky-modifier ↔ keyboard mirroring only via the canonical `clearMetaState` + `onScreen*Toggle` bridge. Two callers: legacy `ExtraKeysPagerAdapter.syncKeyboardModifierState` and RDP `RdpModifierRowHandler.syncRowStateToKeyboard`.
 - INV-011 — `POINTER_DOWN_MASK = 0x8000` and the "release previous before new down" guard in `sendPointerEvent`. Removing this causes the remote OS to see two buttons held simultaneously.
 - INV-013 — `RemoteKeyboardState.shouldSendModifier` deduplicates modifier sends.
 - INV-014 — IME text pipe via `BaseInputConnection`.
+- INV-016 — `RemoteRdpKeyboard.KeyDispatchedListener` fires only on `ACTION_DOWN` / `ACTION_MULTIPLE`, only for non-modifier keycodes, only on the successful dispatch path. Listeners must NOT consume LOCKED modifiers and must NOT release the modifier bits used by `lastDownMetaState` for the ACTION_UP replay.
+- INV-017 — `ZoomScaling.computeMinimumScale` for RDP returns a cover scale (`max(viewW/fbW, viewH/fbH)`) so no black borders appear at minimum zoom; non-RDP returns `canvas.getMinimumScale()` unchanged. The floor is recomputed every call so it tracks the live `visibleHeight` (not just `height`).
+- INV-018 — `InputAreaState` (RDP-only) drives the entire `@+id/rdpInputAreaContainer` lifecycle. `setInputAreaState` is the only mutator; visibility is reapplied after the state is set. Anything that hides the IME on RDP must not collapse `EXTRA → NONE`.
+- INV-019 — All RDP-only UX elements (`ModifierRowView`, `RdpExtraGridPanel`, `RdpModifierRowHandler`, `keyboardToggleButton`, `rdpInputAreaContainer`, RDP touchpad gestures) are gated by `Utils.isRdp(this)`. Non-RDP flavors (bVNC/aSPICE/Opaque) must remain byte-identical to the pre-RDP UX.
 
 ---
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rdpInputAreaRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/extra_keys_background">
+
+    <com.iiordanov.bVNC.extrakeys.ModifierRowView
+        android:id="@+id/modifierRowView"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:scrollbars="none"
+        android:fadingEdge="horizontal"
+        android:fadingEdgeLength="12dp" />
+
+    <com.iiordanov.bVNC.extrakeys.RdpExtraGridPanel
+        android:id="@+id/rdpExtraGridPanel"
+        android:layout_width="match_parent"
+        android:layout_height="192dp"
+        android:visibility="gone" />
+
+</LinearLayout>

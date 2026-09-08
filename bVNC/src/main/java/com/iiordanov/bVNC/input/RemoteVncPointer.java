@@ -99,7 +99,7 @@ public class RemoteVncPointer extends RemotePointer {
 
     @Override
     public void moveMouseButtonDown(int x, int y, int metaState) {
-        pointerMask = prevPointerMask | POINTER_DOWN_MASK;
+        pointerMask = (prevPointerMask & (MOUSE_BUTTON_LEFT | MOUSE_BUTTON_RIGHT | MOUSE_BUTTON_MIDDLE)) | POINTER_DOWN_MASK;
         sendPointerEvent(x, y, metaState, true);
     }
 

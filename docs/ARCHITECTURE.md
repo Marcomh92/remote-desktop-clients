@@ -104,9 +104,10 @@ This is the central flow for upcoming work. See `docs/features/INPUT_PIPELINE.md
 
 | Step | Mouse | Keyboard |
 |---|---|---|
-| Capture | `RemoteCanvasActivity.onTouchEvent` (`RemoteCanvasActivity.java:1280`) | `RemoteClientsInputListener.onKey` (`RemoteClientsInputListener.kt:52`, set via `canvas.setOnKeyListener(inputListener)` in `RemoteCanvasActivity.setInputHandler:1207`) |
-| Gesture / IME interpret | `TouchInputHandlerGeneric` / `TouchInputHandler*` | `RemoteRdpKeyboard.processLocalKeyEvent` + `RemoteKeyboardState.detectHardwareMetaState` |
+| Capture | `RemoteCanvasActivity.onTouchEvent` (`RemoteCanvasActivity.java:1424`) | `RemoteClientsInputListener.onKey` (`RemoteClientsInputListener.kt:52`, set via `canvas.setOnKeyListener(inputListener)` in `RemoteCanvasActivity.setInputHandler:1330`) |
+| Gesture / IME interpret | `TouchInputHandlerGeneric` / `TouchInputHandler*` (RDP touchpad adds fling + long-press=right-click + double-tap-hold=drag via `TouchInputHandlerTouchpad.setRdp(true)`) | `RemoteRdpKeyboard.processLocalKeyEvent` + `RemoteKeyboardState.detectHardwareMetaState` |
 | Protocol method | `pointer.leftButtonDown(...)` etc. | `RdpKeyboardMapper.processAndroidKeyEvent` |
+| One-shot consumption hook (RDP row only) | n/a | `RemoteRdpKeyboard.fireKeyDispatchedIfApplicable:118-135` → `RdpModifierRowHandler.onKeyDispatched` |
 | Native send | `RdpCommunicator.writePointerEvent` (queued in `inputExecutor`) | `RdpCommunicator.processVirtualKey` → `LibFreeRDP.sendKeyEvent` (queued in `inputExecutor`) |
 
 ### 3.3 Disconnect → teardown
@@ -168,6 +169,8 @@ Schema migrations live at `Database.java:283-596`. Each `DBV_*` constant corresp
 | `test-package.bat <pkg-spec>` | Resolves module via `resolve-test-module.ps1`, runs `gradlew.bat <task> --tests %1` | Optional module arg if class lives in more than one |
 | `test-class.bat <class>` | Same as `test-package.bat` but for a single class | Prints `Tests passed` |
 
+> **All four wrappers fail today.** They all `call run-locked.bat` as their first line, and `run-locked.bat` is not in the repo root. Tracked as `known_issues/BUG-001`. Workaround: invoke `gradlew.bat` directly with the same flags, e.g. `gradlew.bat assembleDebug --no-daemon --console=plain --quiet --warning-mode none` or `gradlew.bat :common:testDebugUnitTest --no-daemon --console=plain --quiet --warning-mode none`.
+>
 > **AGENTS.md notes `compile.bat`.** That file does not exist on disk; use `gradlew.bat assembleDebug` directly. Treat the AGENTS.md table as illustrative of intended scripts, not authoritative.
 
 ### Custom VNC viewer

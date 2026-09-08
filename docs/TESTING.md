@@ -29,7 +29,10 @@ Wrapper scripts in the repo root:
 | `.\test-class.bat "com.example.MyTest"` | Runs a single class. Prints `Tests passed`. |
 | `.\test-package.bat "com.example.*"` | Runs all tests in a package. Optional second arg picks the module if a name collides across modules. |
 
-Underlying: each script calls `run-locked.bat` (serialize the build lock) and then `gradlew.bat` with `--no-daemon --console=plain --quiet --warning-mode none`.
+> **All four wrappers fail today** with `'run-locked.bat' is not recognized` because `run-locked.bat` is not in the repo root. Tracked as `known_issues/BUG-001`. Workaround: invoke `gradlew.bat` directly with the same flags:
+> - Build: `gradlew.bat assembleDebug --no-daemon --console=plain --quiet --warning-mode none`
+> - All `:common` tests: `gradlew.bat :common:testDebugUnitTest --no-daemon --console=plain --quiet --warning-mode none`
+> - Single class / package: same `:common:testDebugUnitTest` task with `--tests "<spec>"`.
 
 AGENTS.md mentions `compile.bat` and a `TestListener` in `app/build.gradle.kts`. **Neither exists on disk.** Use `gradlew.bat assembleDebug` directly; the test scripts manage their own output.
 
@@ -48,6 +51,8 @@ AGENTS.md mentions `compile.bat` and a `TestListener` in `app/build.gradle.kts`.
 | Area | Why no tests | Practical alternative |
 |---|---|---|
 | **Input pipeline** (`RemoteRdpKeyboard`, `RemotePointer`, `TouchInputHandler*`, `RemoteExtraKeysHandler`) | Depends on Android `KeyEvent`, `MotionEvent`, hardware-key timing, IME `BaseInputConnection`. Not expressible as plain JUnit. | Manual smoke on a real device. Plan via `gitnexus_impact` before touching; instrument `App.debugLog` (boolean in `App.java`) when running. |
+| **RDP-only modifier UX** (`ModifierRowView`, `RdpModifierRowHandler`, `RdpExtraGridPanel`, `InputAreaState`, `RemoteCanvasActivity.setInputAreaState`) | Pure-logic extraction was deliberately skipped as low value; the interesting behavior is in the Android View lifecycle + listener firing order. | Manual smoke. Cover: tap → one-shot, double-tap → lock, tap when locked → OFF, `123` → grid, IME-hide while in `EXTRA` (grid survives), back-press collapses to NONE, modifier reset on disconnect. |
+| **RDP-only touchpad gestures** (`TouchInputHandlerTouchpad.setRdp(true)` branch: fling, long-press=right-click, double-tap-hold=drag) | Touch event sequencing is not expressible as plain JUnit. | Manual smoke on a real device. Cover: fling damps and stops cleanly at the noise floor; long-press releases at the press position; double-tap-and-hold commits to drag at the 180 ms boundary. |
 | **Native bridge** (`RdpCommunicator`, `LibFreeRDP`, `SpiceCommunicator`) | Calls into JNI. Requires a connected server. | CI is not set up. Manual test plans live informally in `known_issues/*.md`. |
 | **Activities** (`RemoteCanvasActivity`, `ConnectionGridActivity`, `MetaKeyDialog`) | UI tests would need `androidx.test.espresso` per Activity. Setup not done. | Manual smoke. |
 | **Database migrations** (`Database.onUpgrade`) | Real schema migrations require a populated DB; not unit-tested. | Backwards-compat is verified when releasing; see `Database.java:283-596`. |
