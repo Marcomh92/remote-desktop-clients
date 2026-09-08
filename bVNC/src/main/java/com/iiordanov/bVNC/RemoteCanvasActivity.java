@@ -125,6 +125,10 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             R.id.itemInputSingleHanded};
     public static final Map<Integer, String> inputModeMap;
     private final static String TAG = "RemoteCanvasActivity";
+    // Dedicated log tag for viewport / cursor / keyboard diagnostics. Filter
+    // with `adb logcat -s RdpViewport:V` while reproducing the "cursor goes
+    // under the soft keyboard" issue. See BUG-002 in known_issues/.
+    private static final String TAG_VIEWPORT = "RdpViewport";
     private static final int[] scalingModeIds = {R.id.itemZoomable, R.id.itemFitToScreen,
             R.id.itemOneToOne};
 
@@ -170,6 +174,15 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     private RdpModifierRowHandler rdpModifierRowHandler;
     private InputAreaState inputAreaState = InputAreaState.NONE;
     private int lastImeHeightPx = 0; // RDP IME inset height in px; 0 = IME closed
+    // Diagnostic dedup: last values we already logged under TAG_VIEWPORT.
+    // Prevents logcat spam from the per-frame onGlobalLayout / insets paths.
+    private int lastLoggedImeHeightPx = -1;
+    private int lastLoggedRdpFullViewHeight = -1;
+    private int lastLoggedVisibleDesktopHeight = -1;
+    private int lastLoggedContainerH = -1;
+    private int lastLoggedCanvasH = -1;
+    private InputAreaState lastLoggedInputAreaState = null;
+    private boolean lastLoggedSoftKeyboardUp = false;
     ActionBarPositionSaver toolbarPositionSaver = new ActionBarPositionSaver();
     int xPointerOffset = 0;
     int yPointerOffset = 0;
@@ -327,6 +340,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 if (ime > imeMaxHeight / 2) {
                     ime = 0;
                 }
+                // BUG-002 diagnostic: log the raw IME inset, the post-guard height,
+                // and the bogus-IME guard threshold before applying any state change.
+                Log.d(TAG_VIEWPORT, "imeInsets: rawIme=" + ime
+                        + " guardMax=" + (imeMaxHeight / 2)
+                        + " prevLastImeHeightPx=" + lastImeHeightPx
+                        + " prevInputArea=" + inputAreaState);
                 lastImeHeightPx = ime;
                 if (lastImeHeightPx > 0 && inputAreaState == InputAreaState.NONE) {
                     setInputAreaState(InputAreaState.KEYBOARD);
@@ -565,9 +584,26 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             if (Utils.isRdp(this) && inputAreaState == InputAreaState.KEYBOARD) {
                 setInputAreaState(InputAreaState.NONE);
             }
+            // BUG-002 diagnostic: log soft-keyboard heuristic transitions.
+            // The 19% rule is the legacy detection path; the IME insets
+            // listener (RDP only) is the primary source. This log captures
+            // the two in parallel so we can see whether they ever disagree.
+            if (softKeyboardUp) {
+                Log.d(TAG_VIEWPORT, "relayoutViews.softKbd: true -> false"
+                        + " r.bottom=" + r.bottom
+                        + " rootViewHeight=" + rootViewHeight
+                        + " ratio=" + ((float) r.bottom / rootViewHeight));
+            }
             softKeyboardUp = false;
         } else {
             Log.d(TAG, "onGlobalLayout: More than 19% of screen is covered");
+            // BUG-002 diagnostic: see the false->true branch above.
+            if (!softKeyboardUp) {
+                Log.d(TAG_VIEWPORT, "relayoutViews.softKbd: false -> true"
+                        + " r.bottom=" + r.bottom
+                        + " rootViewHeight=" + rootViewHeight
+                        + " ratio=" + ((float) r.bottom / rootViewHeight));
+            }
             softKeyboardUp = true;
             String direction = "up";
             //  Soft Kbd up, shift the extra keys toolbar up.
@@ -1308,8 +1344,41 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             showPanningState(false);
             return true;
         } else if (itemId == R.id.itemCenterMouse) {
-            remoteConnection.getPointer().movePointer(canvas.absoluteXPosition + canvas.getVisibleDesktopWidth() / 2,
-                    canvas.absoluteYPosition + canvas.getVisibleDesktopHeight() / 2);
+            // BUG-002 diagnostic: capture the visible area / cursor state right
+            // before the centering call so we can see whether
+            // getVisibleDesktopHeight() actually excludes the IME region. If the
+            // visible-desktop-height math in recomputeRdpViewport() is wrong, the
+            // cursor will end up underneath the keyboard too.
+            int visW = canvas.getVisibleDesktopWidth();
+            int visH = canvas.getVisibleDesktopHeight();
+            int absX = canvas.absoluteXPosition;
+            int absY = canvas.absoluteYPosition;
+            int targetX = absX + visW / 2;
+            int targetY = absY + visH / 2;
+            int fbH = canvas.getImageHeight();
+            int fbW = canvas.getImageWidth();
+            int ptrBeforeX = remoteConnection.getPointer().getX();
+            int ptrBeforeY = remoteConnection.getPointer().getY();
+            Log.d(TAG_VIEWPORT, "itemCenterMouse: before"
+                    + " absX=" + absX + " absY=" + absY
+                    + " visW=" + visW + " visH=" + visH
+                    + " targetX=" + targetX + " targetY=" + targetY
+                    + " fbW=" + fbW + " fbH=" + fbH
+                    + " imeH=" + lastImeHeightPx
+                    + " containerH=" + (rdpInputAreaContainer != null ? rdpInputAreaContainer.getHeight() : 0)
+                    + " visibleHraw=" + canvas.getHeight()
+                    + " ptrBefore=(" + ptrBeforeX + "," + ptrBeforeY + ")");
+            remoteConnection.getPointer().movePointer(targetX, targetY);
+            int ptrAfterX = remoteConnection.getPointer().getX();
+            int ptrAfterY = remoteConnection.getPointer().getY();
+            // Will the cursor land in the IME-occluded region? We can't know
+            // the IME's screen-pixel Y without more context, but we can flag
+            // whether the target Y is past the visible-desktop top+height.
+            boolean landsInVisibleY = (targetY >= absY) && (targetY < absY + visH);
+            Log.d(TAG_VIEWPORT, "itemCenterMouse: after"
+                    + " ptrAfter=(" + ptrAfterX + "," + ptrAfterY + ")"
+                    + " landsInVisibleY=" + landsInVisibleY
+                    + " imeOverlap=" + (lastImeHeightPx - (canvas.getRdpFullViewHeight() - canvas.getHeight())));
             return true;
         } else if (itemId == R.id.itemDisconnect) {
             disconnectAndFinishActivity();
@@ -1610,7 +1679,16 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
      * hook.
      */
     public void setInputAreaState(InputAreaState newState) {
+        InputAreaState prev = this.inputAreaState;
         this.inputAreaState = newState == null ? InputAreaState.NONE : newState;
+        // BUG-002 diagnostic: log the RDP input-area state transition. The
+        // visibility flip that follows will trigger logViewportState() via
+        // recomputeRdpViewport(); this separate line records the transition
+        // itself for the keyboard show/hide timeline.
+        if (prev != this.inputAreaState) {
+            Log.d(TAG_VIEWPORT, "inputAreaState: " + prev + " -> " + this.inputAreaState
+                    + " (imeH=" + lastImeHeightPx + " softKbdUp=" + softKeyboardUp + ")");
+        }
         // Forward to the modifier-row handler if it's been attached. The
         // handler owns the modifier-row / extra-keys-grid visibility and the
         // IME toggling on KEYBOARD<->EXTRA transitions; the activity still
@@ -1669,6 +1747,60 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             int imeOverlap = Math.max(0, lastImeHeightPx - (canvas.getRdpFullViewHeight() - canvasH));
             rdpInputAreaContainer.setTranslationY(-imeOverlap);
         }
+        // BUG-002 diagnostic: log the viewport math whenever any input changes.
+        // The dedup in logViewportState() keeps noise low across repeated recomputes.
+        logViewportState(canvasH, containerH, "recomputeRdpViewport");
+    }
+
+    /**
+     * BUG-002 diagnostic helper. Emits one consolidated log line under
+     * {@link #TAG_VIEWPORT} with the current viewport / keyboard / input-area
+     * state, but only when at least one tracked field has changed since the
+     * last log. Use {@code adb logcat -s RdpViewport:V} to filter.
+     */
+    private void logViewportState(int canvasH, int containerH, String reason) {
+        if (canvas == null) return;
+        int rdpFullH = canvas.getRdpFullViewHeight();
+        // Use the stored visibleHeight (set when the IME / input area
+        // shrinks the visible desktop), not canvas.getHeight()/zoom — that
+        // only reflects the surface height and ignores the IME.
+        int visibleH = canvas.getVisibleDesktopHeight();
+        boolean changed = (rdpFullH != lastLoggedRdpFullViewHeight)
+                || (canvasH != lastLoggedCanvasH)
+                || (containerH != lastLoggedContainerH)
+                || (lastImeHeightPx != lastLoggedImeHeightPx)
+                || (visibleH != lastLoggedVisibleDesktopHeight)
+                || (inputAreaState != lastLoggedInputAreaState)
+                || (softKeyboardUp != lastLoggedSoftKeyboardUp);
+        if (!changed) return;
+        int ptrX = -1, ptrY = -1;
+        try {
+            if (remoteConnection != null && remoteConnection.getPointer() != null) {
+                ptrX = remoteConnection.getPointer().getX();
+                ptrY = remoteConnection.getPointer().getY();
+            }
+        } catch (Exception ignored) {
+            // RemoteConnection / pointer not yet wired on early lifecycle calls.
+        }
+        Log.d(TAG_VIEWPORT, reason
+                + " | canvasW=" + canvas.getWidth()
+                + " canvasH=" + canvasH
+                + " rdpFullH=" + rdpFullH
+                + " imeH=" + lastImeHeightPx
+                + " containerH=" + containerH
+                + " usableH=" + (rdpFullH - lastImeHeightPx - containerH)
+                + " visibleDesktopH=" + visibleH
+                + " inputArea=" + inputAreaState
+                + " softKbdUp=" + softKeyboardUp
+                + " ptrX=" + ptrX
+                + " ptrY=" + ptrY);
+        lastLoggedRdpFullViewHeight = rdpFullH;
+        lastLoggedCanvasH = canvasH;
+        lastLoggedContainerH = containerH;
+        lastLoggedImeHeightPx = lastImeHeightPx;
+        lastLoggedVisibleDesktopHeight = visibleH;
+        lastLoggedInputAreaState = inputAreaState;
+        lastLoggedSoftKeyboardUp = softKeyboardUp;
     }
 
     /**

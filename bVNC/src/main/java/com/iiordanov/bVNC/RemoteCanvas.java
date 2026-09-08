@@ -61,6 +61,16 @@ import com.undatech.remoteClientUi.R;
 
 public class RemoteCanvas extends AppCompatImageView implements Viewable {
     private final static String TAG = "RemoteCanvas";
+    // Dedicated log tag for viewport / cursor / keyboard diagnostics. Filter
+    // with `adb logcat -s RdpViewport:V` while reproducing the "cursor goes
+    // under the soft keyboard" issue. See BUG-002 in known_issues/.
+    private static final String TAG_VIEWPORT = "RdpViewport";
+    // BUG-002 diagnostic: caches of last values we logged so we only emit when
+    // a tracked field actually changes.
+    private int lastLoggedVisibleHeight = Integer.MIN_VALUE;
+    private int lastLoggedRdpFullViewHeight = Integer.MIN_VALUE;
+    private int lastLoggedAbsX = Integer.MIN_VALUE;
+    private int lastLoggedAbsY = Integer.MIN_VALUE;
 
     public AbstractScaling canvasZoomer;
 
@@ -532,9 +542,18 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
             }
         }
 
-        // We only pan if the current scaling is able to pan.
-        if (canvasZoomer != null && !canvasZoomer.isAbleToPan())
-            return;
+        // BUG-002 fix: do NOT early-exit on canvasZoomer.isAbleToPan().
+        // FitToScreenScaling.isAbleToPan() is a hard-coded `false` constant and
+        // does not inspect dimensions — so when the surface perfectly fits the
+        // desktop (e.g. 1440x3216 == 1440x3216) the user is in fit-to-screen,
+        // the early-exit fires, and the viewport never pans to follow the
+        // cursor. That's correct when there is no IME/input area, but the IME
+        // shrinks visibleDesktopHeight (e.g. 3216 -> 1886) so the framebuffer
+        // is now taller than the visible area and pan IS needed.
+        //
+        // The dimension gate above already does the right thing: it sets
+        // panX/panY=false when fbDim < visDim, so panning is geometrically
+        // impossible; otherwise it lets the pan logic run.
 
         int x = pointer.getX();
         int y = pointer.getY();
@@ -575,6 +594,35 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
         if (panY && newY != absoluteYPosition) {
             absoluteYPosition = newY;
             panned = true;
+        }
+
+        // BUG-002 diagnostic: log the full pan decision. We emit only when
+        // something actually moved (panned==true), when the pan gate closed
+        // (panX/panY==false because fbDim < visibleDim), or when the cursor
+        // has moved enough to be visually distinct from the last logged
+        // position (>=16 px on either axis). The 16-px floor keeps log volume
+        // sane — touchpad cursor updates fire at touch rate (~60-100 Hz) and
+        // without it the log would flood.
+        boolean gateClosed = (!panX || !panY);
+        int dx = Math.abs(x - lastLoggedAbsX);
+        int dy = Math.abs(y - lastLoggedAbsY);
+        if (panned || gateClosed || dx >= 16 || dy >= 16) {
+            boolean cursorInVisibleX = (x >= absoluteXPosition) && (x < absoluteXPosition + w);
+            boolean cursorInVisibleY = (y >= absoluteYPosition) && (y < absoluteYPosition + h);
+            Log.d(TAG_VIEWPORT, "movePanToMakePointerVisible"
+                    + " ptr=(" + x + "," + y + ")"
+                    + " abs=(" + absoluteXPosition + "," + absoluteYPosition + ")"
+                    + " visW=" + w + " visH=" + h
+                    + " fbW=" + iw + " fbH=" + ih
+                    + " panX=" + panX + " panY=" + panY
+                    + " panned=" + panned
+                    + " newX=" + newX + " newY=" + newY
+                    + " cursorInVisibleX=" + cursorInVisibleX
+                    + " cursorInVisibleY=" + cursorInVisibleY
+                    + " rdpFullH=" + rdpFullViewHeight
+                    + " canvasH=" + getHeight());
+            lastLoggedAbsX = x;
+            lastLoggedAbsY = y;
         }
 
         if (panned) {
@@ -870,10 +918,26 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
     }
 
     public void setVisibleDesktopHeight(int newHeight) {
+        // BUG-002 diagnostic: log when the visible-desktop height actually
+        // changes. The on-change dedup keeps logcat quiet across no-op writes
+        // (e.g. when relayoutViews fires repeatedly with the same value).
+        if (newHeight != visibleHeight) {
+            Log.d(TAG_VIEWPORT, "setVisibleDesktopHeight: " + visibleHeight + " -> " + newHeight
+                    + " (canvasH=" + getHeight() + " rdpFullH=" + rdpFullViewHeight + ")");
+            lastLoggedVisibleHeight = newHeight;
+        }
         visibleHeight = newHeight;
     }
 
     public void setRdpFullViewHeight(int height) {
+        // BUG-002 diagnostic: log when the physical full-screen height used
+        // for the zoom floor changes. This is the canonical "what does the
+        // canvas think the screen height is" signal.
+        if (height != rdpFullViewHeight) {
+            Log.d(TAG_VIEWPORT, "setRdpFullViewHeight: " + rdpFullViewHeight + " -> " + height
+                    + " (canvasH=" + getHeight() + " visibleH=" + visibleHeight + ")");
+            lastLoggedRdpFullViewHeight = height;
+        }
         rdpFullViewHeight = height;
     }
 
