@@ -94,6 +94,7 @@ Three rounds of changes have landed:
 | 1 | Initial MS-RDP UX | `InputAreaState` state machine (NONE/KEYBOARD/EXTRA); `ModifierRowView` + `RdpExtraGridPanel` + `RdpModifierRowHandler`; cover-scale zoom floor; RDP-only touchpad fling + long-press=right-click + double-tap-hold=immediate-press-and-drag; floating `keyboardToggleButton`. |
 | 2 | Polish | One-shot consumption hook (INV-016); pointer bug fix across flavors; legacy `clearMetaState` path retained; `ModifierRowView` LOCKED semantics. |
 | 3 | IME ↔ viewport math + adaptive double-tap | RDP IME insets listener + `recomputeRdpViewport` (single viewport owner); cover floor now uses the new `rdpFullViewHeight` field (not the shrunk `visibleHeight`); adaptive double-tap (nothing sent on the 2nd DOWN — wait for MOVE-vs-UP); touchpad sensitivity coefficient `(slider+1) * 0.6f` (was `0.4f`, too slow on 560dpi). |
+| 4 | Touchpad tunables + drag-hold edge pinning + smaller modifiers | Three new RDP-only sliders — **Edge Pan Threshold** (`edgeThresholdDp`), **Mouse Acceleration** (`mouseAccelerationStrength`), **Fling Resistance** (`flingResistance`) — pushed into `RemoteCanvas.setEdgeThresholdDp`, `RemotePointer.setAccelerationStrength`, and `TouchInputHandlerTouchpad.setFlingDamp` from `RemoteCanvasActivity` (onCreate + onResume + on every `getInputHandlerById`). Defaults reproduce prior hardcoded values (35 dp / strength 1.0 / damp 0.86). Drag-hold edge pinning (`EdgePinRepeater` inner class on the touchpad handler) slowly keeps the cursor moving while a committed double-click+drag is pinned in the 24 dp canvas-edge band — RDP-only. Modifier row keys shrank (`rdp_input_area.xml` 40 dp, `ModifierRowView.makeButton` 56 dp wide, minHeight zeroed). `rdpTouchSlop` is now a fixed `DRAG_THRESHOLD_DP = 2f` px-clamped threshold, not `getScaledTouchSlop()/2`. |
 
 Read `docs/features/INPUT_PIPELINE.md` for the canonical map. Key entry points:
 
@@ -111,6 +112,13 @@ Read `docs/features/INPUT_PIPELINE.md` for the canonical map. Key entry points:
 | **Touchpad sensitivity coefficient** (round 3: `0.6f`, was `0.4f`) | `RemoteCanvasActivity.getTouchpadSensitivityMultiplier:1282-1286` |
 | RDP-only IME-visible canvas resize (window `setSoftInputMode(SOFT_INPUT_ADJUST_RESIZE)`) | `RemoteCanvasActivity.onCreate:295-298` |
 | Cross-flavor pointer bug fix (right/middle drag release) | `RemoteRdpPointer.moveMouseButtonDown:88-92`, `RemoteVncPointer.moveMouseButtonDown:101-104`, `RemoteSpicePointer.moveMouseButtonDown:100-103` |
+| **RDP-only runtime tunables** (round 4: edge-pan / acceleration / fling) | `RemoteCanvasActivity.onCreate:307` + `onResume:906-913` + `getInputHandlerById:1240-1262` (push `setEdgeThresholdDp` / `setAccelerationStrength` / `setFlingDamp`); prefs `global_preferences.xml:52-66` |
+| **Edge-pan threshold** (round 4: replaces hardcoded `Constants.H/W_THRESH`) | `RemoteCanvas.java:65-71` (default `EDGE_THRESH_DP = 35f` retained as field default), `:915-917` (`setEdgeThresholdDp`), `:560-568` (consumed in `movePanToMakePointerVisible`) |
+| **Touchpad acceleration strength** (round 4: 0 = none, 1 = legacy, >1 = exaggerated) | `remoteClientLib/.../RemotePointer.java:47` (field `accelerationStrength`, default `1.0f`), `:318-319` (setter); consumed in `TouchInputHandlerTouchpad.computeAcceleration:552-568` |
+| **Fling resistance** (round 4: `0.92f - slider*0.01f`, default slider 6 → damp 0.86) | `TouchInputHandlerTouchpad.java:65` (`flingDamp` field), `:111-113` (`setFlingDamp`); consumed in `Flinger.run:637-638` |
+| **Drag-hold edge pinning** (round 4: laptop-touchpad behavior, RDP-only) | `TouchInputHandlerTouchpad.EdgePinRepeater:686-740`; started/updated from `onTouchEvent:433-438` (`ACTION_MOVE` while `rdpDoubleTapDragging`); 24 dp band at `:55` (`EDGE_PIN_BAND_DP`), 100 dp/s at `:57` (`EDGE_PIN_SPEED_DP_PER_S`) |
+| **Drag-commit threshold** (round 4: fixed 2 dp, was `scaledTouchSlop/2`) | `TouchInputHandlerTouchpad.java:53` (`DRAG_THRESHOLD_DP`), `:103` (`rdpTouchSlop = max(2, 2*density)`), consumed at `:410` |
+| **Modifier row sizing** (round 4: 48→40 dp row, 72→56 dp button width) | `rdp_input_area.xml:12`, `ModifierRowView.java:200-208` |
 
 ---
 

@@ -9,7 +9,7 @@
     <com.iiordanov.bVNC.extrakeys.ModifierRowView
         android:id="@+id/modifierRowView"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
+        android:layout_height="40dp"
         android:scrollbars="none"
         android:fadingEdge="horizontal"
         android:fadingEdgeLength="12dp" />

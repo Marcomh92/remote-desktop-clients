@@ -22,6 +22,12 @@ public abstract class RemotePointer {
     public static float DEFAULT_SENSITIVITY = 2.0f;
     public static boolean DEFAULT_ACCELERATED = true;
     /**
+     * Default strength of the acceleration curve in {@code computeAcceleration}.
+     * At 1.0 the legacy curve is preserved exactly; values below 1.0 soften the
+     * jump on larger deltas, values above 1.0 exaggerate it.
+     */
+    public static float DEFAULT_ACCELERATION_STRENGTH = 1.0f;
+    /**
      * Current state of "mouse" buttons
      */
     protected int pointerMask = 0;
@@ -38,6 +44,7 @@ public abstract class RemotePointer {
     protected boolean relativeEvents = false;
     protected float sensitivity = DEFAULT_SENSITIVITY;
     protected boolean accelerated = DEFAULT_ACCELERATED;
+    protected float accelerationStrength = DEFAULT_ACCELERATION_STRENGTH;
     protected boolean debugLogging;
     private final boolean useDpadAsPointer;
     MouseScroller scroller;
@@ -302,6 +309,14 @@ public abstract class RemotePointer {
 
     public void setAccelerated(boolean accelerated) {
         this.accelerated = accelerated;
+    }
+
+    public float getAccelerationStrength() {
+        return accelerationStrength;
+    }
+
+    public void setAccelerationStrength(float accelerationStrength) {
+        this.accelerationStrength = accelerationStrength;
     }
 
     public class MouseScroller implements Runnable {

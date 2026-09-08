@@ -23,7 +23,6 @@ package com.iiordanov.bVNC.input;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.view.MotionEvent;
-import android.view.ViewConfiguration;
 
 import com.undatech.opaque.InputCarriable;
 import com.undatech.opaque.Viewable;
@@ -45,8 +44,25 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     private static final float FLING_DAMP = 0.86f;
     /** Below this speed (px/s in either axis) the fling stops to avoid jitter. */
     private static final float FLING_NOISE_PX_PER_S = 200f;
+    /**
+     * A very tiny density-independent movement threshold for what counts as a
+     * double-click+drag — the finger may move a tiny amount without the gesture
+     * being rejected; a true double-click has virtually no movement after the
+     * 2nd tap lands.
+     */
+    private static final float DRAG_THRESHOLD_DP = 2f;
+    /** Finger-edge band (dp): within this distance of a canvas edge the drag keeps moving the cursor. */
+    private static final float EDGE_PIN_BAND_DP = 24f;
+    /** Slow drag-hold cursor speed, in density-independent units (dp/s of screen motion at sensitivity 1). */
+    private static final float EDGE_PIN_SPEED_DP_PER_S = 100f;
 
     private final Flinger flinger;
+    /**
+     * Per-tick damping factor for the fling deceleration, configured at runtime
+     * (defaulting to {@link #FLING_DAMP}). Pushed from the activity's Fling
+     * Resistance setting via {@link #setFlingDamp(float)}.
+     */
+    private float flingDamp = FLING_DAMP;
 
     /**
      * Adaptive double-tap state: the second tap's DOWN was seen (via
@@ -59,15 +75,41 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     /** Touch coordinates of the second tap's DOWN, used as the movement-slop origin. */
     private float rdpDoubleTapDownX = 0f;
     private float rdpDoubleTapDownY = 0f;
-    /** Half the platform touch slop — how far the finger must travel to commit to a drag. */
+    /**
+     * Fixed density-independent movement threshold (≈2 dp) the finger must
+     * exceed to commit the second tap to a drag. Kept tiny so a true
+     * double-click (which has almost no movement after the 2nd tap) still lands.
+     */
     private final int rdpTouchSlop;
+
+    /**
+     * Slow-cursor drag-hold helper for committed double-click+drag: while the
+     * finger is pinned in the {@link #EDGE_PIN_BAND_DP} band at the canvas edge,
+     * keeps nudging the cursor (with LEFT held) so the user can keep dragging
+     * past the local screen edge without lifting the finger.
+     */
+    private final EdgePinRepeater edgePinRepeater;
+    /** {@link #EDGE_PIN_BAND_DP} pre-converted to pixels for the current display. */
+    private final int edgePinBandPx;
 
     public TouchInputHandlerTouchpad(TouchInputDelegate touchInputDelegate, Viewable viewable,
                                      InputCarriable remoteInput, boolean debugLogging,
                                      float scrollRate) {
         super(touchInputDelegate, viewable, remoteInput, debugLogging, scrollRate);
         this.flinger = new Flinger(viewable.getHandler());
-        this.rdpTouchSlop = ViewConfiguration.get(viewable.getContext()).getScaledTouchSlop() / 2;
+        this.edgePinRepeater = new EdgePinRepeater(viewable.getHandler());
+        // 2 dp floor so the gesture still triggers on very low-density displays;
+        // pre-multiplied by displayDensity (inherited, set by the super ctor).
+        this.rdpTouchSlop = Math.max(2, (int) (DRAG_THRESHOLD_DP * displayDensity + 0.5f));
+        this.edgePinBandPx = (int) (EDGE_PIN_BAND_DP * displayDensity + 0.5f);
+    }
+
+    /**
+     * Updates the per-tick fling damping factor (default {@link #FLING_DAMP}).
+     * Called by the activity when the Fling Resistance setting changes.
+     */
+    public void setFlingDamp(float flingDamp) {
+        this.flingDamp = flingDamp;
     }
 
     /**
@@ -80,6 +122,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             // Cancel any in-flight fling to avoid leaving the state machine
             // half-initialized when the flag flips off mid-gesture.
             flinger.stop();
+            edgePinRepeater.stop();
             // Defensive release: if a drag/right-drag/middle-drag is in flight we
             // must release the held button at the current pointer position. Without
             // this the Generic UP path would either skip the release (flags cleared
@@ -297,6 +340,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         // double-tap isn't armed by a phantom continuation of this gesture.
         rdpDoubleTapPending = false;
         rdpDoubleTapDragging = false;
+        edgePinRepeater.stop();
     }
 
     /**
@@ -344,6 +388,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                 // very end of this dispatch, so clearing here is safe.
                 rdpDoubleTapPending = false;
                 rdpDoubleTapDragging = false;
+                edgePinRepeater.stop();
                 return super.onTouchEvent(e);
             }
             if (rdpDoubleTapPending || rdpDoubleTapDragging) {
@@ -353,6 +398,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                     // once dragMode is set, so cancelDoubleTapGesture's dragging
                     // branch (releaseButton) has to run here.
                     cancelDoubleTapGesture();
+                    edgePinRepeater.stop();
                     return super.onTouchEvent(e);
                 }
             }
@@ -367,6 +413,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                         return super.onTouchEvent(e);
                     }
                     case MotionEvent.ACTION_UP:
+                        edgePinRepeater.stop();
                         emitDoubleTapDoubleClick(e);
                         // Still feed super so the GestureDetector sees the UP and cancels
                         // its armed LONG_PRESS timer — otherwise a quick double-tap would
@@ -374,6 +421,20 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                         // UP branch releaseButton is idempotent with no button held.
                         super.onTouchEvent(e);
                         return true; // consume; both clicks were already sent in full
+                }
+            }
+            // Slow-cursor drag-hold: while a double-click+drag is committed,
+            // push the cursor further in the finger's edge-band direction so the
+            // user can keep dragging past the local screen edge without lifting
+            // the finger. Stop the repeater on UP so a finger lifted inside the
+            // edge band doesn't keep ticking after the drag ends. The repeater
+            // never clears dragMode / rdpDoubleTapDragging — ending the drag
+            // stays owned by UP/CANCEL/setRdp(false) paths.
+            if (rdpDoubleTapDragging) {
+                if (action == MotionEvent.ACTION_MOVE) {
+                    updateEdgePinRepeater(e);
+                } else if (action == MotionEvent.ACTION_UP) {
+                    edgePinRepeater.stop();
                 }
             }
         }
@@ -494,12 +555,48 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         boolean accelerated = remoteInput.getPointer().isAccelerated();
         if (delta <= 15) {
             // ponytail: small deltas pass through unscaled (was *0.75f — too sluggish).
-        } else if (accelerated && delta <= 70.0f) {
-            delta = delta * delta / 20.0f;
         } else if (accelerated) {
-            delta = delta * 4.5f;
+            float strength = remoteInput.getPointer().getAccelerationStrength();
+            float curve = (delta <= 70.0f) ? delta * delta / 20.0f : delta * 4.5f;
+            // Strength lerps between pass-through and the legacy curve: 0 = no
+            // acceleration, 1 = legacy curve exactly, >1 = exaggerated. Note the
+            // quadratic branch over-shoots above strength 1 as delta grows (delta=50,
+            // strength=2 -> 200 vs legacy 125) — intentional lerp behavior.
+            delta = delta + (curve - delta) * strength;
         }
         return origSign * delta;
+    }
+
+    /**
+     * Starts, restarts, or stops {@link #edgePinRepeater} based on whether the
+     * finger sits in the edge band of the canvas. Re-anchors each (re)start at
+     * the cursor's current position so restarts never jump.
+     */
+    private void updateEdgePinRepeater(MotionEvent e) {
+        int band = edgePinBandPx;
+        int w = viewable.getWidth();
+        int h = viewable.getHeight();
+        float speed = EDGE_PIN_SPEED_DP_PER_S * displayDensity;
+        float vx = 0f;
+        float vy = 0f;
+        if (e.getX() < band) {
+            vx = -speed;
+        } else if (e.getX() > w - band) {
+            vx = speed;
+        }
+        if (e.getY() < band) {
+            vy = -speed;
+        } else if (e.getY() > h - band) {
+            vy = speed;
+        }
+        if (vx == 0f && vy == 0f) {
+            edgePinRepeater.stop();
+        } else {
+            edgePinRepeater.start(vx, vy,
+                    Math.round(remoteInput.getPointer().getX()),
+                    Math.round(remoteInput.getPointer().getY()),
+                    e.getMetaState());
+        }
     }
 
     /**
@@ -535,9 +632,10 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
 
         @Override
         public void run() {
-            // Brake by the per-tick damping factor.
-            vx *= FLING_DAMP;
-            vy *= FLING_DAMP;
+            // Brake by the per-tick damping factor (now configured via
+            // setFlingDamp, pushed from the activity's Fling Resistance setting).
+            vx *= flingDamp;
+            vy *= flingDamp;
 
             // Noise floor: stop the fling once neither axis is still moving meaningfully.
             if (Math.abs(vx) < FLING_NOISE_PX_PER_S && Math.abs(vy) < FLING_NOISE_PX_PER_S) {
@@ -571,6 +669,70 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                 // tick, and (because the clamp will keep rejecting our deltas)
                 // none ever will. Drop the flinger instead of letting it tick
                 // down through the noise floor with zero effective motion.
+                return;
+            }
+            handler.postDelayed(this, FLING_TICK_MS);
+        }
+    }
+
+    /**
+     * Drag-hold helper: while the user is dragging with a finger pinned at the
+     * canvas edge, keep moving the remote cursor (with LEFT held) so the user
+     * can continue dragging past the local screen edge — matching the
+     * laptop-touchpad "drag-hold" behavior. Velocity is constant (no damping);
+     * stops when the finger leaves the edge band or the remote pointer is
+     * clamped by the desktop bounds (no further motion possible).
+     */
+    private final class EdgePinRepeater implements Runnable {
+        private final Handler handler;
+        private float vx;
+        private float vy;
+        private int x;
+        private int y;
+        private int meta;
+
+        EdgePinRepeater(Handler handler) {
+            this.handler = handler;
+        }
+
+        void start(float velocityX, float velocityY, int startX, int startY, int metaState) {
+            stop();
+            this.vx = velocityX;
+            this.vy = velocityY;
+            this.x = startX;
+            this.y = startY;
+            this.meta = metaState;
+            handler.postDelayed(this, FLING_TICK_MS);
+        }
+
+        void stop() {
+            handler.removeCallbacks(this);
+        }
+
+        @Override
+        public void run() {
+            // Mirror Flinger's per-tick math (sensitivity, density, cbrt(zoom))
+            // so the slow drag-hold motion feels consistent with regular drag
+            // inertia at the same zoom level.
+            float sensitivity = remoteInput.getPointer().getSensitivity();
+            float zoomCurve = (float) Math.cbrt(viewable.getZoomFactor());
+            float dt = (float) FLING_TICK_MS / 1000f;
+            x = Math.round(x + vx * dt * sensitivity / displayDensity * zoomCurve);
+            y = Math.round(y + vy * dt * sensitivity / displayDensity * zoomCurve);
+
+            // Snapshot pointer position before the move so an edge-clamped tick
+            // (same value before/after) stops the repeater instead of
+            // re-posting into a dead clamp.
+            int beforeX = Math.round(remoteInput.getPointer().getX());
+            int beforeY = Math.round(remoteInput.getPointer().getY());
+            // moveMouseButtonDown (not moveMouse) so the LEFT button stays
+            // held — the user is mid-drag and we must not drop the button.
+            remoteInput.getPointer().moveMouseButtonDown(x, y, meta);
+            int afterX = Math.round(remoteInput.getPointer().getX());
+            int afterY = Math.round(remoteInput.getPointer().getY());
+            if (beforeX == afterX && beforeY == afterY) {
+                // Edge of remote desktop reached; nothing more can move this
+                // tick and the clamp will keep rejecting further ticks.
                 return;
             }
             handler.postDelayed(this, FLING_TICK_MS);

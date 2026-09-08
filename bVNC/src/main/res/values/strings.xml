@@ -1001,6 +1001,9 @@ Below that is where you configure your connection.
     <string name="enable_gateway">Enable RDP Gateway</string>
     <string name="scroll_speed">Touch Scroll Speed</string>
     <string name="touchpad_sensitivity">Touchpad Sensitivity</string>
+    <string name="edge_threshold_dp">Edge Pan Threshold</string>
+    <string name="mouse_acceleration_strength">Mouse Acceleration</string>
+    <string name="fling_resistance">Fling Resistance</string>
     <string name="desktop_scale_percentage">Custom Scaling Percentage</string>
     <string name="show_menu">Show Menu</string>
     <string name="move_toolbar">Move Toolbar</string>

@@ -203,14 +203,20 @@ Future refactors should normalize the leak (shut down `inputExecutor` in `close`
 
 | Gesture | Where | Wire mapping |
 |---|---|---|
-| Cursor fling | `TouchInputHandlerTouchpad.java:204-237` + inner `Flinger:510-578` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_DAMP=0.86` per tick, `FLING_NOISE_PX_PER_S=200` floor. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Cancels on new touch-down and returns false while the adaptive double-tap state machine is `PENDING` or `DRAGGING`. |
-| Long-press = synthesized right click | `onLongPress:268-300` | `pointer.rightButtonDown(x, y, meta)` immediately, then a `viewable.getHandler().postDelayed(... releaseButton, 40)` fires the matching up while the finger is still down. `rightDragMode` is intentionally **not** set so no drag cursor follows; the parent UP branch's `releaseButton` is idempotent. `onScroll` is suppressed during `rightDragMode` (which only the two-finger-tap path enters). Clears `rdpDoubleTapPending` / `rdpDoubleTapDragging` for mutual exclusion with the adaptive double-tap. |
-| **Adaptive** double-tap-and-hold = press-and-drag OR double-click | `onDoubleTap:315-327`, `onTouchEvent:338-381`, helpers `commitDoubleTapDrag:389-400` + `emitDoubleTapDoubleClick:406-413` + `cancelDoubleTapGesture:419-427` | The 2nd tap's `DOWN` arms `PENDING` and sends NOTHING. `ACTION_MOVE` past half the touch slop (`rdpTouchSlop = getScaledTouchSlop()/2`) commits a left-button press-and-drag; `ACTION_UP` without movement emits two `performTapClick` pairs (a true double-click); `ACTION_CANCEL` releases the held button. Replaces the round-2 "click-then-drag" that maximized title bars via Windows DBLCLK on the 2nd DOWN. |
+| Cursor fling | `TouchInputHandlerTouchpad.java:247-280` + inner `Flinger:607-676` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_NOISE_PX_PER_S=200` floor. The per-tick damping factor is a runtime-configurable instance field `flingDamp` (default `FLING_DAMP=0.86f`); `RemoteCanvasActivity.getFlingResistanceDamp` (slider → `0.92f - slider*0.01f`, default slider 6 → 0.86 = legacy) pushes it via `setFlingDamp:111-113` from `getInputHandlerById:1261-1263` and `onResume:911-913`. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Edge-clamped ticks stop the flinger early. Cancels on new touch-down and returns false while the adaptive double-tap state machine is `PENDING` or `DRAGGING`. |
+| Long-press = synthesized right click | `onLongPress:311-344` | `pointer.rightButtonDown(x, y, meta)` immediately, then a `viewable.getHandler().postDelayed(... releaseButton, 40)` fires the matching up while the finger is still down. `rightDragMode` is intentionally **not** set so no drag cursor follows; the parent UP branch's `releaseButton` is idempotent. `onScroll` is suppressed during `rightDragMode` (which only the two-finger-tap path enters). Clears `rdpDoubleTapPending` / `rdpDoubleTapDragging` and stops `edgePinRepeater` for mutual exclusion with the adaptive double-tap and drag-hold edge pinning. |
+| **Adaptive** double-tap-and-hold = press-and-drag OR double-click | `onDoubleTap:359-371`, `onTouchEvent:382-442`, helpers `commitDoubleTapDrag:450-461` + `emitDoubleTapDoubleClick:467-474` + `cancelDoubleTapGesture:480-488` | The 2nd tap's `DOWN` arms `PENDING` and sends NOTHING. `ACTION_MOVE` past a tiny fixed slop (`rdpTouchSlop = max(2, DRAG_THRESHOLD_DP * density)`, `DRAG_THRESHOLD_DP=2f` — round 4) commits a left-button press-and-drag; `ACTION_UP` without movement emits two `performTapClick` pairs (a true double-click); `ACTION_CANCEL` releases the held button. Round 4 replaced the `getScaledTouchSlop()/2` heuristic — that was too coarse and cancelled genuine intended drags with tiny finger motion. |
+| **Drag-hold edge pinning** (round 4) | Inner `EdgePinRepeater:686-740`; started/updated from `updateEdgePinRepeater:575-600` driven by `onTouchEvent:433-438` (`ACTION_MOVE` while `rdpDoubleTapDragging`) | While a committed double-click+drag is pinned in the 24 dp canvas-edge band (`EDGE_PIN_BAND_DP`), posts 20 ms ticks on `viewable.getHandler()` that call `pointer.moveMouseButtonDown` (LEFT held) with constant velocity 100 dp/s (`EDGE_PIN_SPEED_DP_PER_S`). Displacement: `vx*dt*sensitivity/displayDensity*cbrt(zoom)`. Stops on `ACTION_UP`/`ACTION_CANCEL`/`ACTION_DOWN`/`setRdp(false)`/`onLongPress`, finger leaving the band, or remote-desktop edge clamp. |
 
 **Wiring.**
 - `RemoteCanvasActivity.setInputHandler:1350-1356` calls `touchInputHandler.setRdp(true)` (implicit via the `TouchInputHandlerTouchpad` constructor path + `onCreateOptionsMenu`).
-- `RemoteCanvasActivity.onDestroy:1378-1391` calls `setRdp(false)` so any in-flight fling runnable is cancelled and `dragMode` / `rightDragMode` / `middleDragMode` are cleared. If a drag is in flight, `setRdp(false)` defensively releases the held button at the current pointer position. `setRdp(false)` also clears the adaptive-double-tap state.
+- `RemoteCanvasActivity.onDestroy:1378-1391` calls `setRdp(false)` so any in-flight fling runnable is cancelled and `dragMode` / `rightDragMode` / `middleDragMode` are cleared. If a drag is in flight, `setRdp(false)` defensively releases the held button at the current pointer position. `setRdp(false)` also clears the adaptive-double-tap state AND stops the `edgePinRepeater` (round 4) for teardown safety.
 - `ConnectionBean.getDefaultInputMode:183-193` writes `TOUCHPAD_MODE` for new RDP connections. Stored `INPUTMODE` values are not migrated.
+
+**Round-4 tunables wired through the same instance setters:**
+- `RemoteCanvasActivity.onCreate:307` calls `canvas.setEdgeThresholdDp(getEdgeThresholdDpPref())` (replaces the legacy `Constants.H/W_THRESH` constants).
+- `RemoteCanvasActivity.onResume:906-913` re-pushes all three: `setEdgeThresholdDp` + `setAccelerationStrength` + `setFlingDamp`.
+- `RemoteCanvasActivity.getInputHandlerById:1240` calls `setAccelerationStrength` and `:1261-1263` calls `setFlingDamp` whenever a touchpad handler is returned — so freshly constructed handlers pick up live slider values without an activity recreate.
 
 ---
 
@@ -249,6 +255,30 @@ cover = max(viewW / fbW, viewH / fbH);
 **Viewport owner (round 3).** `recomputeRdpViewport:1641-1672` is the single source of truth for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. Called from the IME insets listener, the end of `relayoutViews` (RDP-gated at `:609-615`), and the end of `setInputAreaState` (RDP-gated at `:1625-1627`). The legacy `relayoutViews` shrink block is RDP-gated out (`:514-517`).
 
 **Gate.** Every RDP-specific branch (relayout branches `:454-599`, `:609-615`, the insets listener at `:315-339`, `onBackPressed:1734-1752`, `setInputHandler:1350-1356`, `onCreateOptionsMenu:1048-1103`, `setInputAreaState:1612-1628`) is gated by `Utils.isRdp(this)`. Non-RDP flavors remain byte-identical to the pre-RDP UX.
+
+---
+
+## PAT-016 — Runtime-configurable input tunables (slider → instance field)
+
+**Rule.** Input behaviour knobs that used to be hardcoded constants now follow a single shape — a `SeekBarPreference` row in `global_preferences.xml` (base file, protocol-agnostic), a `Constants.<KEY>` string + `DEFAULT_*` int, a getter on `RemoteCanvasActivity` returning the consumed value, and an instance-field setter on the consumer pushed at three call sites:
+
+1. `RemoteCanvasActivity.onCreate` (initial apply — edge only),
+2. `RemoteCanvasActivity.onResume` (live re-apply on return from Settings — all three),
+3. `RemoteCanvasActivity.getInputHandlerById` (so a freshly constructed handler picks up the live slider without recreating the activity).
+
+Defaults reproduce the prior hardcoded value, so the slider at its default reproduces legacy behavior byte-for-byte.
+
+**Where (round 4).**
+
+| Slider | Default → consumer value | Consumer field / setter | Push sites |
+|---|---|---|---|
+| `edgeThresholdDp` (default 35, max 60) | `getEdgeThresholdDpPref` → `dp` | `RemoteCanvas.edgeThreshDp` field (default `EDGE_THRESH_DP=35f` retained); `setEdgeThresholdDp:915-917` | `onCreate:307`, `onResume:906` |
+| `mouseAccelerationStrength` (default 10, max 20) | `getMouseAccelerationStrength` → `slider/10f` | `RemotePointer.accelerationStrength` field (default `DEFAULT_ACCELERATION_STRENGTH=1.0f`); `setAccelerationStrength:318-319` | `onResume:909`, `getInputHandlerById:1240` |
+| `flingResistance` (default 6, max 12) | `getFlingResistanceDamp` → `0.92f - slider*0.01f` (slider 6 → 0.86 = legacy `FLING_DAMP`) | `TouchInputHandlerTouchpad.flingDamp` field (default `FLING_DAMP=0.86f` retained); `setFlingDamp:111-113` | `onResume:911-913`, `getInputHandlerById:1261-1263` |
+
+**Why three push sites.** `onCreate` alone is insufficient because the activity isn't recreated when Settings changes the slider. `onResume` alone is insufficient because a fresh `TouchInputHandlerTouchpad` constructed inside `getInputHandlerById` is created lazily after `onCreate`/`onResume` have already fired. `getInputHandlerById` alone is insufficient because some setters (`setEdgeThresholdDp` on `RemoteCanvas`) live on a singleton-style object that exists long before the touchpad handler is built.
+
+**Invariant.** Default slider values reproduce exact legacy behavior. See INV-021.
 
 ---
 

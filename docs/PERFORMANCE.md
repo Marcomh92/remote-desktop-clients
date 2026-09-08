@@ -28,7 +28,7 @@ These are not formally enforced; they are descriptive of current behavior and wh
 | `PER-FRAME-60` | Target reDraw rate | 16.6666 ms (60 Hz) | `RemoteCanvas.java:684` |
 | `PER-FRAME-FALLBACK` | Coalesced invalidate when behind | `100 ms` | `RemoteCanvas.invalidateCanvasRunnable:153` |
 | `PER-MENU-FRAME` | Menu-driven invalidate only | n/a | `RemoteCanvas.reDraw(float...)` |
-| `PER-FLING-TICK` | Touchpad fling tick (RDP-only). Up to ~50 events/s. | `20 ms` | `TouchInputHandlerTouchpad.FLING_TICK_MS=20`, `FLING_DAMP=0.86`, `FLING_NOISE_PX_PER_S=200` |
+| `PER-FLING-TICK` | Touchpad fling tick (RDP-only). Up to ~50 events/s. Per-tick damping is the runtime-configurable `flingDamp` instance field (default `FLING_DAMP=0.86f`; slider 6 → `0.92f - slider*0.01f` = 0.86 = legacy — round 4). The new `EdgePinRepeater` (drag-hold edge pin) reuses the same `FLING_TICK_MS=20` on `viewable.getHandler()` (main-thread UI handler), so the two stay in lockstep. | `20 ms` | `TouchInputHandlerTouchpad.FLING_TICK_MS=20`, `FLING_DAMP=0.86f` (now default of `flingDamp` field), `FLING_NOISE_PX_PER_S=200`, `EdgePinRepeater:686-740` |
 
 Touch and key handlers use the same executor (see `DESIGN_PRINCIPLES.md` PAT-003), so the throttle is per channel, not per type.
 

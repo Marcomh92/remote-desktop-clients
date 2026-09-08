@@ -197,13 +197,15 @@ public class ModifierRowView extends HorizontalScrollView {
         b.setInsetBottom(0);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
         b.setGravity(Gravity.CENTER);
         return b;
     }
 
     private LinearLayout.LayoutParams buttonLayoutParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            dp(72), LinearLayout.LayoutParams.MATCH_PARENT);
+            dp(56), LinearLayout.LayoutParams.MATCH_PARENT);
         lp.setMargins(dp(1), 0, dp(1), 0);
         return lp;
     }

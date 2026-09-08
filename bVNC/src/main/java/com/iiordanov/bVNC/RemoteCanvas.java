@@ -65,8 +65,10 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
     // panning when the cursor is within this many dp of the visible-area
     // edge (was previously the px constant Constants.H_THRESH / W_THRESH =
     // 50, which was density-insensitive and felt too coarse on high-DPI
-    // panels).
+    // panels). Overridable at runtime via setEdgeThresholdDp (Edge Pan
+    // Threshold setting); see edgeThreshDp below.
     private static final float EDGE_THRESH_DP = 35.0f;
+    private float edgeThreshDp = EDGE_THRESH_DP;
 
     public AbstractScaling canvasZoomer;
 
@@ -558,14 +560,10 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
         int h = getVisibleDesktopHeight();
         int iw = getImageWidth();
         int ih = getImageHeight();
-        // BUG-002 enhancement: start panning when the cursor is within ~8dp of
-        // the visible-area edge (was previously Constants.H_THRESH/W_THRESH =
-        // 50 px regardless of display density, which was too coarse on xxxhdpi
-        // panels and made the cursor feel like it had to "push" against the
-        // edge before the viewport followed). 8dp at xxxhdpi = 32 px, still
-        // well under TOP_MARGIN (110 px).
+        // BUG-002: cursor edge threshold for viewport panning. See EDGE_THRESH_DP
+        // for the default and history; overridable via setEdgeThresholdDp.
         float density = getResources().getDisplayMetrics().density;
-        int edgeThreshPx = (int) (EDGE_THRESH_DP * density + 0.5f);
+        int edgeThreshPx = (int) (edgeThreshDp * density + 0.5f);
         int wThresh = edgeThreshPx;
         int hThresh = edgeThreshPx;
 
@@ -912,6 +910,10 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
 
     public void setRdpFullViewHeight(int height) {
         rdpFullViewHeight = height;
+    }
+
+    public void setEdgeThresholdDp(float edgeThresholdDp) {
+        this.edgeThreshDp = edgeThresholdDp;
     }
 
     int getRdpFullViewHeight() {

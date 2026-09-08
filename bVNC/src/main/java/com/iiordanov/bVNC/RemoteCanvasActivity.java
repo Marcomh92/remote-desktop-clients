@@ -303,6 +303,9 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
 
         canvasLayout = findViewById(R.id.canvasLayout);
         canvas = findViewById(R.id.canvas);
+        if (canvas != null) {
+            canvas.setEdgeThresholdDp(getEdgeThresholdDpPref());
+        }
         keyboardIconForAndroidTv = findViewById(R.id.keyboardIconForAndroidTv);
         if (Utils.isRdp(this)) {
             keyboardToggleButton = findViewById(R.id.keyboardToggleButton);
@@ -899,6 +902,15 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         Log.i(TAG, "onResume called.");
         try {
             canvas.postInvalidateDelayed(600);
+            if (canvas != null) {
+                canvas.setEdgeThresholdDp(getEdgeThresholdDpPref());
+            }
+            if (remoteConnection != null && remoteConnection.getPointer() != null) {
+                remoteConnection.getPointer().setAccelerationStrength(getMouseAccelerationStrength());
+            }
+            if (touchInputHandler != null && touchInputHandler instanceof TouchInputHandlerTouchpad) {
+                ((TouchInputHandlerTouchpad) touchInputHandler).setFlingDamp(getFlingResistanceDamp());
+            }
         } catch (NullPointerException e) {
             Log.d(TAG, "Ignoring NullPointerException during onResume");
         }
@@ -1225,6 +1237,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         }
         float scrollRate = getScrollRate();
         remoteConnection.getPointer().setSensitivity(getTouchpadSensitivityMultiplier());
+        remoteConnection.getPointer().setAccelerationStrength(getMouseAccelerationStrength());
         for (int i = 0; i < inputModeIds.length; ++i) {
             if (inputModeIds[i] == id) {
                 if (inputModeHandlers[i] == null) {
@@ -1244,6 +1257,9 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                     } else {
                         throw new IllegalStateException("Unexpected value: " + id);
                     }
+                }
+                if (inputModeHandlers[i] instanceof TouchInputHandlerTouchpad) {
+                    ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setFlingDamp(getFlingResistanceDamp());
                 }
                 return inputModeHandlers[i];
             }
@@ -1283,6 +1299,20 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         int slider = Utils.querySharedPreferencesInt(this, Constants.touchpadSensitivity, Constants.DEFAULT_TOUCHPAD_SENSITIVITY);
         // Coefficient tuned to MS-RDP feel (0.4 was too slow on 560dpi devices).
         return (slider + 1) * 0.6f;
+    }
+
+    float getEdgeThresholdDpPref() {
+        return Utils.querySharedPreferencesInt(this, Constants.edgeThresholdDp, Constants.DEFAULT_EDGE_THRESHOLD_DP);
+    }
+
+    float getMouseAccelerationStrength() {
+        int slider = Utils.querySharedPreferencesInt(this, Constants.mouseAccelerationStrength, Constants.DEFAULT_MOUSE_ACCELERATION_STRENGTH);
+        return slider / 10f; // default slider 10 -> 1.0f (legacy acceleration curve)
+    }
+
+    float getFlingResistanceDamp() {
+        int slider = Utils.querySharedPreferencesInt(this, Constants.flingResistance, Constants.DEFAULT_FLING_RESISTANCE);
+        return 0.92f - slider * 0.01f; // default slider 6 -> 0.86 (legacy FLING_DAMP); higher slider = more resistance = shorter fling
     }
 
     @Override
