@@ -120,13 +120,13 @@ inputHandler.onTouchEvent(MotionEvent)   // selected from inputModeHandlers (Tou
 
 ### 2.2.1 Touchpad-specific gestures (RDP only)
 
-`bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerTouchpad.java` extends the generic handler with three gestures that match the Microsoft RDP Android app. They are gated by `setRdp(boolean)` (`:78-101`); non-RDP touchpad sessions keep the legacy behaviour.
+`bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerTouchpad.java` extends the generic handler with three gestures that match the Microsoft RDP Android app. They are gated by `setRdp(boolean)` (`:77-101`); non-RDP touchpad sessions keep the legacy behaviour.
 
 | Gesture | Where | Wire mapping |
 |---|---|---|
-| Cursor fling (release velocity → decaying tick) | `onFling:199-230` + inner `Flinger` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_DAMP=0.86` per tick, `FLING_NOISE_PX_PER_S=200` floor → up to ~50 events/s. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Cancels on new touch-down. |
-| Long-press = right-click while finger is down | `onLongPress:264-279` | `pointer.rightButtonDown(pressX, pressY, meta)` → `rightDragMode=true`. Release is sent at the press position (`longPressReleaseX/Y`) when the finger lifts, mirroring Microsoft RDP. `onScroll` is suppressed during `rightDragMode`. |
-| Double-tap-and-hold = left-drag | `onDoubleTap:296-322` + `pendingDoubleTapCommit` (`:51`) | First tap fires immediately via `performTapClick`. A 180 ms commit window waits; if the finger lifts before it (`doubleTapFingerUp`), the second tap becomes another click; if it stays down past the window, `dragMode=true` and `pointer.leftButtonDown(pressX, pressY, meta)` arms the drag. |
+| Cursor fling (release velocity → decaying tick) | `onFling:204-237` + inner `Flinger:510-578` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_DAMP=0.86` per tick, `FLING_NOISE_PX_PER_S=200` floor → up to ~50 events/s. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Cancels on new touch-down and returns false while the adaptive double-tap state machine is `PENDING` or `DRAGGING`. |
+| Long-press = synthesized right click (full down + ~40 ms delayed up) | `onLongPress:268-300` | `pointer.rightButtonDown(x, y, meta)` immediately, then a `viewable.getHandler().postDelayed(... releaseButton, 40)` fires the matching up while the finger is still down. `rightDragMode` is **not** set, so no drag cursor follows; the parent UP branch's `releaseButton` is idempotent. Mutually exclusive with the adaptive double-tap: clears `rdpDoubleTapPending` / `rdpDoubleTapDragging` so the next double-tap is not armed by a phantom continuation. |
+| **Adaptive** double-tap-and-hold = press-and-drag OR double-click | `onDoubleTap:315-327`, `onTouchEvent:338-381`, helpers `commitDoubleTapDrag:389-400` + `emitDoubleTapDoubleClick:406-413` + `cancelDoubleTapGesture:419-427` | The 2nd tap's `DOWN` arms `PENDING` and sends NOTHING to the server. `ACTION_MOVE` past half the touch slop (`rdpTouchSlop = getScaledTouchSlop()/2`) commits a left-button press-and-drag (`pointer.leftButtonDown` + `dragMode=true`); `ACTION_UP` without movement emits two `performTapClick` pairs (a true double-click); `ACTION_CANCEL` releases the held button. The legacy round-2 behaviour (immediate press-and-drag that maximized title bars via Windows DBLCLK on the 2nd DOWN) is replaced — Windows no longer sees a synthesized DBLCLK, only a press+drag. `onFling` is gated off while pending/dragging. |
 
 `TouchInputHandlerTouchpad.setRdp(true)` is called from `RemoteCanvasActivity.setInputHandler` (`:1351`) and `setRdp(false)` from `onDestroy` (`:1376-1378`) so the gating reflects the live flavor. New RDP connections default to touchpad via `ConnectionBean.getDefaultInputMode` (`:183-193`).
 
@@ -340,7 +340,19 @@ The RDP flavor hosts its own modifier UI inside `rdpInputAreaContainer` (`bVNC/s
 | `KEYBOARD` | Software IME + modifier row above it. |
 | `EXTRA` | Extra-keys grid + modifier row above it (IME hidden). |
 
-Transitions are driven by `RemoteCanvasActivity.setInputAreaState:1562-1570` and gated by `Utils.isRdp(this)` — non-RDP flavors never enter the state machine. RDP-only `relayoutViews` branches at `RemoteCanvasActivity.java:454-540, 626-627`: IME-up collapses `KEYBOARD → NONE` but leaves `EXTRA` alone (so the grid survives the IME hiding); the legacy 3-page pager is suppressed for RDP. Viewport shrinks subtract the container's measured height so the canvas keeps its `visibleHeight` honest. The container is translated above the IME (`rdpInputAreaContainer.setTranslationY(diffLayoutKeysPosition)`). Back-press when in `KEYBOARD` or `EXTRA` collapses to `NONE` instead of finishing the Activity (`onBackPressed:1644-1646`).
+Transitions are driven by `RemoteCanvasActivity.setInputAreaState:1612-1628` and gated by `Utils.isRdp(this)` — non-RDP flavors never enter the state machine.
+
+**Viewport ownership (round 3).** `recomputeRdpViewport` (`RemoteCanvasActivity.java:1641-1672`) is the single source of truth for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. It is called from three places:
+
+1. The RDP-only `ViewCompat.setOnApplyWindowInsetsListener` on `canvasLayout` (`RemoteCanvasActivity.onCreate:315-339`) — reads `WindowInsetsCompat.Type.ime().bottom`, applies a bogus-IME guard (`ime > imeMaxHeight/2 → ime=0`, where `imeMaxHeight` is `canvas.getRdpFullViewHeight() > 0 ? rdpFullViewHeight : canvasLayout.getHeight() + lastImeHeightPx`), drives `InputAreaState` (`KEYBOARD ↔ NONE` only), and calls `recomputeRdpViewport`. Returns insets unchanged so children still dispatch.
+2. The end of `relayoutViews` (RDP-gated at `RemoteCanvasActivity.java:609-615`) — re-applies the viewport math on rotation, resize, and IME-driven layout passes.
+3. The end of `setInputAreaState` (RDP-gated at `:1625-1627`) — re-applies after the container's `VISIBLE ↔ GONE` flip.
+
+**Full-height capture (`rdpFullViewHeight`).** Captured inside `recomputeRdpViewport` only — never elsewhere. When `lastImeHeightPx == 0` (IME closed), `canvas.setRdpFullViewHeight(canvas.getHeight())`; when the IME is already open on the first call, `setRdpFullViewHeight(canvas.getHeight() + lastImeHeightPx)` so the floor matches the pre-IME physical height. The field is package-scope (`RemoteCanvas.java:109` init, `:876-882` accessors) and is consumed by `ZoomScaling.computeMinimumScale:223-235` for the cover floor (see PAT-014 / INV-017).
+
+**Container translation above the IME.** `imeOverlap = max(0, lastImeHeightPx − (rdpFullViewHeight − canvasH))` is the single formula for both window models: if the window did not resize (`canvasH ≈ rdpFullViewHeight`), `imeOverlap ≈ ime` and the container is lifted; if the window did resize (`canvasH ≈ rdpFullViewHeight − ime`), `imeOverlap ≈ 0` and the bottom-gravity container stays put. Replaces the round-1/2 `rdpContainerTranslation` heuristic, which depended on `setSoftInputMode(SOFT_INPUT_ADJUST_RESIZE)` to fire `getWindowVisibleDisplayFrame().bottom`.
+
+**IME-up collapses `KEYBOARD → NONE` but leaves `EXTRA` alone** (so the grid survives the IME hiding); the legacy 3-page pager is suppressed for RDP. The 19% `r.bottom` heuristic in `relayoutViews:550-599` is the fallback for non-RDP flavors and for the RDP container-visibility transitions; the legacy `setVisibleDesktopHeight + relativePan` shrink block at `relayoutViews:514-517` is RDP-gated out (`if (!Utils.isRdp(this))`). Back-press when in `KEYBOARD` or `EXTRA` collapses to `NONE` instead of finishing the Activity (`onBackPressed:1734-1752`).
 
 **Bridging to `onScreenMetaState` (INV-010):** `RdpModifierRowHandler.syncRowStateToKeyboard:308-317` calls `keyboard.clearMetaState()` then `keyboard.onScreen{Ctrl,Alt,Shift,Super}Toggle()` for every modifier where `rowView.isOnOrLocked(...)` is true — the canonical INV-010 pattern, used by both bridges.
 
@@ -443,7 +455,7 @@ Layout: `bVNC/src/main/res/layout/metakey.xml`.
 | Key | Purpose | Default | Where |
 |---|---|---|---|
 | `scrollSpeed` | Slider 0–6 → `(slider+1)/7f` | `6` | `global_preferences.xml:44`, `Constants.scrollSpeed` |
-| `touchpadSensitivity` | Slider → `(slider+1) * 0.4f` | `4` | `global_preferences.xml:49`, `Constants.touchpadSensitivity` |
+| `touchpadSensitivity` | Slider → `(slider+1) * 0.6f` (round 3; was `0.4f`, too slow on 560dpi devices) | `4` | `global_preferences.xml:49`, `Constants.touchpadSensitivity`, `RemoteCanvasActivity.getTouchpadSensitivityMultiplier:1282-1286` |
 | `softwareKeyboardType` | ListPreference | `TYPE_NULL` | `global_preferences.xml:40` |
 | `preferSendingUnicode` | Per-connection bool | `true` | `Constants.preferSendingUnicode`, `ConnectionBean.PREFERSENDINGUNICODE` |
 | `useDpadAsPointer` | Per-connection | varies | `Constants.useDpadAsArrows` |
@@ -458,8 +470,8 @@ Layout: `bVNC/src/main/res/layout/metakey.xml`.
   - `maxSwipeSpeed = round(7 * scrollRate)` (`:120`)
   - `baseSwipeDist = 10dp / scrollRate` (`:137`)
 
-`Constants.touchpadSensitivity` → `(slider+1) * 0.4f` is consumed in:
-- `RemoteCanvasActivity.getTouchpadSensitivityMultiplier():1111-1114` → `pointer.setSensitivity(...)` (`:1061`)
+`Constants.touchpadSensitivity` → `(slider+1) * 0.6f` is consumed in:
+- `RemoteCanvasActivity.getTouchpadSensitivityMultiplier():1282-1286` → `pointer.setSensitivity(...)` (`:1227`)
 
 ---
 
@@ -494,7 +506,7 @@ Ranked by likelihood (most likely first).
 4. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ModifierRowView.java` — horizontally-scrollable row of 8 keys; OFF/ON/LOCKED per modifier; 800 ms double-tap = LOCKED.
 5. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpModifierRowHandler.java` — orchestrator (RDP-only). `attach/onKeyboardReady/onInputAreaStateChanged/resetRowState/onKeyDispatched/syncRowStateToKeyboard`.
 6. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpExtraGridPanel.java` — "123" extra-keys grid (F-keys + navigation).
-7. `bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerTouchpad.java` — `setRdp(boolean):78-101`; fling (`Flinger` inner class), `onLongPress:264-279` right-click-while-down, `onDoubleTap:296-322` double-tap-hold = drag.
+7. `bVNC/src/main/java/com/iiordanov/bVNC/input/TouchInputHandlerTouchpad.java` — `setRdp(boolean):77-101`; fling (`Flinger` inner class, `FLING_TICK_MS=20`, `FLING_DAMP=0.86`, `FLING_NOISE_PX_PER_S=200`), `onFling:204-237` (returns false while adaptive-double-tap is `PENDING` or `DRAGGING`), `onLongPress:268-300` synthesized right click (down + 40 ms delayed up) and clears the adaptive-double-tap state for mutual exclusion, `onDoubleTap:315-327` arms `PENDING` only (no click), `onTouchEvent:338-381` + helpers `commitDoubleTapDrag:389-400` / `emitDoubleTapDoubleClick:406-413` / `cancelDoubleTapGesture:419-427` implement the round-3 adaptive double-tap state machine.
 8. `remoteClientLib/src/main/java/com/undatech/opaque/input/RdpKeyboardMapper.java`
    - `keymapAndroid[]` initialization at `:241-444`
    - `processAndroidKeyEvent:458-534`
@@ -524,10 +536,10 @@ Ranked by likelihood (most likely first).
 14. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RemoteExtraKeysHandler.java:60-87` (legacy VNC/SPICE/Opaque pager)
 15. `bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/ExtraKeysPagerAdapter.java:147-155` (legacy INV-010 bridge)
 16. `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteClientsInputListener.kt:52-152`
-17. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java` — `setInputAreaState:1562-1570`, `setInputAreaContainerVisibility:1582-1588`, `onKeyboardToggleButtonClicked:1592-1610`, `setInputHandler:1350-1356` (RDP handler attach), `keyboardToggleButton` inline drag-vs-tap listener `:1048-1103`, RDP-only `relayoutViews` branches at `:454-540, 626-627`, `onBackPressed:1644-1646`, `setModes` touchpad fallback at `:866-867`.
-18. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvas.java:823-832`, `:738-744`, `:733-735`
+17. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java` — `setInputAreaState:1612-1628`, `updateRdpInputAreaVisibility:1681-1689`, `onKeyboardToggleButtonClicked:1699-1712`, `setInputHandler:1350-1356` (RDP handler attach), `keyboardToggleButton` inline drag-vs-tap listener `:1048-1103`, RDP-only IME insets listener on `canvasLayout` at `:315-339`, `recomputeRdpViewport:1641-1672` (single RDP viewport owner — round 3), `getTouchpadSensitivityMultiplier:1282-1286` (round 3 coefficient `0.6f`), RDP-gated legacy shrink block at `relayoutViews:514-517`, end-of-relayout RDP recompute at `:609-615`, `onBackPressed:1734-1752`, `setModes` touchpad fallback at `:866-867`.
+18. `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvas.java:823-832`, `:738-744`, `:733-735`, **`rdpFullViewHeight` field `:109`, accessors `:876-882` (round 3)**
 19. `bVNC/src/main/java/com/iiordanov/bVNC/dialogs/MetaKeyDialog.java:251-254`, `:444-492`, `:494-514`, `:637-658`
-20. `bVNC/src/main/java/com/iiordanov/bVNC/ZoomScaling.java:213-234` — RDP-only `computeMinimumScale` cover-scale clamp.
+20. `bVNC/src/main/java/com/iiordanov/bVNC/ZoomScaling.java:223-235` — RDP-only `computeMinimumScale` cover-scale clamp; round 3 reads `canvas.rdpFullViewHeight` instead of the shrunk `visibleHeight`.
 21. `bVNC/src/main/java/com/iiordanov/bVNC/ConnectionBean.java:183-193` — `getDefaultInputMode` writes `TOUCHPAD_MODE` for new RDP connections.
 
 ---
@@ -545,9 +557,10 @@ Ranked by likelihood (most likely first).
 - INV-013 — `RemoteKeyboardState.shouldSendModifier` deduplicates modifier sends.
 - INV-014 — IME text pipe via `BaseInputConnection`.
 - INV-016 — `RemoteRdpKeyboard.KeyDispatchedListener` fires only on `ACTION_DOWN` / `ACTION_MULTIPLE`, only for non-modifier keycodes, only on the successful dispatch path. Listeners must NOT consume LOCKED modifiers and must NOT release the modifier bits used by `lastDownMetaState` for the ACTION_UP replay.
-- INV-017 — `ZoomScaling.computeMinimumScale` for RDP returns a cover scale (`max(viewW/fbW, viewH/fbH)`) so no black borders appear at minimum zoom; non-RDP returns `canvas.getMinimumScale()` unchanged. The floor is recomputed every call so it tracks the live `visibleHeight` (not just `height`).
-- INV-018 — `InputAreaState` (RDP-only) drives the entire `@+id/rdpInputAreaContainer` lifecycle. `setInputAreaState` is the only mutator; visibility is reapplied after the state is set. Anything that hides the IME on RDP must not collapse `EXTRA → NONE`.
-- INV-019 — All RDP-only UX elements (`ModifierRowView`, `RdpExtraGridPanel`, `RdpModifierRowHandler`, `keyboardToggleButton`, `rdpInputAreaContainer`, RDP touchpad gestures) are gated by `Utils.isRdp(this)`. Non-RDP flavors (bVNC/aSPICE/Opaque) must remain byte-identical to the pre-RDP UX.
+- INV-017 — `ZoomScaling.computeMinimumScale` for RDP returns a cover scale (`max(viewW/fbW, viewH/fbH)`) so no black borders appear at minimum zoom; non-RDP returns `canvas.getMinimumScale()` unchanged. The floor uses `canvas.rdpFullViewHeight` (the PHYSICAL full-screen height captured when the IME is closed) — never the shrunk `visibleHeight`. The self-referential `visibleHeight` floor was the round-2 bug that disabled `movePanToMakePointerVisible`'s vertical pan when the window did not resize. The floor is recomputed every call so it tracks the live `rdpFullViewHeight`.
+- INV-018 — `InputAreaState` (RDP-only) drives the entire `@+id/rdpInputAreaContainer` lifecycle. `setInputAreaState` is the only mutator; visibility is reapplied after the state is set. Anything that hides the IME on RDP must not collapse `EXTRA → NONE`. Round 3: the `KEYBOARD ↔ NONE` transition is also driven by the IME insets listener (`onCreate:315-339`) on top of the legacy `relayoutViews` 19% heuristic — non-RDP flavors do not enter the listener.
+- INV-019 — All RDP-only UX elements (`ModifierRowView`, `RdpExtraGridPanel`, `RdpModifierRowHandler`, `keyboardToggleButton`, `rdpInputAreaContainer`, `recomputeRdpViewport`, the IME insets listener, RDP touchpad gestures) are gated by `Utils.isRdp(this)`. Non-RDP flavors (bVNC/aSPICE/Opaque) must remain byte-identical to the pre-RDP UX.
+- INV-020 (round 3) — `recomputeRdpViewport` is the **single source of truth** for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. The legacy `relayoutViews` shrink block (`setVisibleDesktopHeight + relativePan`) is RDP-gated out (`:514-517`). `rdpFullViewHeight` is only ever set to the physical full-screen height (`canvas.getHeight()` when IME closed, or `canvas.getHeight() + lastImeHeightPx` if the IME was already open on first capture) — never to the shrunk viewport.
 
 ---
 

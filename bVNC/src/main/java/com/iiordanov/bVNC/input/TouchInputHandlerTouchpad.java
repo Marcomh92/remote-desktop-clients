@@ -23,6 +23,7 @@ package com.iiordanov.bVNC.input;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 
 import com.undatech.opaque.InputCarriable;
 import com.undatech.opaque.Viewable;
@@ -34,8 +35,8 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     static final String TAG = "InputHandlerTouchpad";
 
     /**
-     * RDP-style gestures (fling, long-press=right-click, double-tap-and-hold=drag) only apply
-     * to RDP touchpad sessions. Non-RDP touchpad sessions keep the legacy behaviour.
+     * RDP-style gestures (fling, long-press=right-click, adaptive double-tap=drag-or-double-click)
+     * only apply to RDP touchpad sessions. Non-RDP touchpad sessions keep the legacy behaviour.
      */
     private boolean isRdp = false;
 
@@ -44,44 +45,41 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     private static final float FLING_DAMP = 0.86f;
     /** Below this speed (px/s in either axis) the fling stops to avoid jitter. */
     private static final float FLING_NOISE_PX_PER_S = 200f;
-    /** How long (ms) after the second tap we wait before deciding double-click vs drag. */
-    private static final long DOUBLE_TAP_HOLD_MS = 180L;
 
     private final Flinger flinger;
-    private Runnable pendingDoubleTapCommit;
-    private boolean doubleTapFingerUp;
-    private int doubleTapX;
-    private int doubleTapY;
-    private int doubleTapMeta;
 
     /**
-     * If {@link #rightDragFromLongPress} is set, release the right button at these
-     * coordinates (where the user originally pressed) rather than at the finger-lift
-     * position. Mirrors the Microsoft RDP touchpad behaviour where long-press = right
-     * click is anchored to the press point.
+     * Adaptive double-tap state: the second tap's DOWN was seen (via
+     * {@link #onDoubleTap(MotionEvent)}) but NOTHING has been sent to the server yet.
+     * We wait to learn the user's intent: movement => drag, lift => double-click.
      */
-    private boolean rightDragFromLongPress;
-    private int longPressReleaseX;
-    private int longPressReleaseY;
+    private boolean rdpDoubleTapPending = false;
+    /** Movement passed the slop while PENDING: LEFT is held down and {@code dragMode} is armed. */
+    private boolean rdpDoubleTapDragging = false;
+    /** Touch coordinates of the second tap's DOWN, used as the movement-slop origin. */
+    private float rdpDoubleTapDownX = 0f;
+    private float rdpDoubleTapDownY = 0f;
+    /** Half the platform touch slop — how far the finger must travel to commit to a drag. */
+    private final int rdpTouchSlop;
 
     public TouchInputHandlerTouchpad(TouchInputDelegate touchInputDelegate, Viewable viewable,
                                      InputCarriable remoteInput, boolean debugLogging,
                                      float scrollRate) {
         super(touchInputDelegate, viewable, remoteInput, debugLogging, scrollRate);
         this.flinger = new Flinger(viewable.getHandler());
+        this.rdpTouchSlop = ViewConfiguration.get(viewable.getContext()).getScaledTouchSlop() / 2;
     }
 
     /**
      * Set by the integration pass to enable Microsoft-RDP-style touchpad gestures
-     * (fling / long-press=right-click / double-tap-and-hold=left-drag) for this instance.
+     * (fling / long-press=right-click / adaptive double-tap=left-drag-or-double-click) for this instance.
      */
     public void setRdp(boolean isRdp) {
         this.isRdp = isRdp;
         if (!isRdp) {
-            // Cancel any in-flight gestures to avoid leaving the state machine
+            // Cancel any in-flight fling to avoid leaving the state machine
             // half-initialized when the flag flips off mid-gesture.
             flinger.stop();
-            cancelPendingDoubleTapCommit();
             // Defensive release: if a drag/right-drag/middle-drag is in flight we
             // must release the held button at the current pointer position. Without
             // this the Generic UP path would either skip the release (flags cleared
@@ -96,7 +94,9 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             }
             dragMode = false;
             rightDragMode = false;
-            rightDragFromLongPress = false;
+            // Drop any half-armed adaptive double-tap state with it.
+            rdpDoubleTapPending = false;
+            rdpDoubleTapDragging = false;
         }
     }
 
@@ -148,9 +148,10 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             // to stick a spiteful onScroll with a MASSIVE delta here.
             // This would cause the mouse pointer to jump to another place suddenly.
             // Hence, we ignore onScroll after scaling until we lift all pointers up.
-            // While a right-button drag (from long-press) is held, do not let incremental finger
-            // jitter translate into cursor drift — the right click should land at the original
-            // touch position, not chase a moving cursor.
+            // While a right-button drag is held (long-press or two-finger-tap path),
+            // do not let incremental finger jitter translate into cursor drift —
+            // the right click should land at the press position, not chase a
+            // moving cursor.
             if (twoFingers || inSwiping || rightDragMode) {
                 return true;
             }
@@ -219,6 +220,11 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         if (twoFingers) {
             return false;
         }
+        // A double-tap gesture (pending or committed to a drag) must never turn into a
+        // cursor fling on release — the user was dragging a window, not throwing the cursor.
+        if (rdpDoubleTapPending || rdpDoubleTapDragging) {
+            return false;
+        }
 
         int meta = (e2 != null) ? e2.getMetaState() : 0;
         int startX = Math.round(remoteInput.getPointer().getX());
@@ -239,19 +245,24 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         GeneralUtils.debugLog(debugLogging, TAG, "onDown, e: " + e);
         panRepeater.stop();
         // A new touch down interrupts any in-flight fling so the user can land precisely.
+        // NOTE: the adaptive double-tap state is deliberately NOT reset here — onDown() is
+        // invoked by GestureDetector *after* onDoubleTap() within the same second-tap DOWN
+        // dispatch, so a reset here would wipe the state onDoubleTap just armed. The reset
+        // lives in onTouchEvent()'s ACTION_DOWN branch, which runs before the detector feed.
         flinger.stop();
         return true;
     }
 
     /**
-     * RDP-only long-press fires a RIGHT mouse-button click while the finger is still down —
-     * replacing the legacy left-drag that TouchInputHandlerGeneric.onLongPress would start.
-     * The existing Generic UP path still releases the right button on finger lift via
-     * endDragModesAndScrolling + pointer.releaseButton.
+     * RDP-only long-press fires a FULL right mouse-button click (down + up ~40ms
+     * apart) at the long-press instant, while the finger is still down — matching
+     * the Microsoft RDP touchpad semantics. Holding the right button until finger
+     * lift (the legacy behaviour) was rejected by Windows as a deferred right-click.
      *
-     * <p>The release point is recorded so {@link #onTouchEvent(MotionEvent)} can
-     * re-anchor the release at the press position (matching the Microsoft RDP
-     * touchpad semantics).
+     * <p>{@code rightDragMode} is intentionally NOT set: after the auto-released
+     * right click, no drag-cursor should follow. The parent's UP branch
+     * {@code releaseButton} on finger lift is idempotent when no button is held
+     * (see {@link RemoteRdpPointer#releaseButton}).
      */
     @Override
     public void onLongPress(MotionEvent e) {
@@ -272,21 +283,33 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
 
         int metaState = e.getMetaState();
         touchInputDelegate.sendShortVibration();
-        rightDragMode = true;
-        rightDragFromLongPress = true;
-        longPressReleaseX = getX(e);
-        longPressReleaseY = getY(e);
-        remoteInput.getPointer().rightButtonDown(longPressReleaseX, longPressReleaseY, metaState);
+
+        final int x = getX(e);
+        final int y = getY(e);
+        final int m = metaState;
+        remoteInput.getPointer().rightButtonDown(x, y, m);
+        // Fire the matching up ~40ms later. Even if the user keeps holding past
+        // 40ms, the parent's UP branch releaseButton is idempotent (no button held
+        // → only MOVE-only telemetry is sent).
+        viewable.getHandler().postDelayed(() -> remoteInput.getPointer().releaseButton(x, y, m), 40);
+        // A long press (right-click) is mutually exclusive with the adaptive
+        // double-tap gesture: clear any pending/dragging state so the next
+        // double-tap isn't armed by a phantom continuation of this gesture.
+        rdpDoubleTapPending = false;
+        rdpDoubleTapDragging = false;
     }
 
     /**
-     * RDP-only double-tap-and-hold semantics:
-     *  - fire click #1 immediately,
-     *  - wait {@link #DOUBLE_TAP_HOLD_MS},
-     *  - if the finger lifted in the meantime, fire click #2 (= a double-click);
-     *  - if the finger is still down, arm a left-drag from the tap position (the existing
-     *    Generic ACTION_MOVE path will then move the mouse while the left button stays held,
-     *    thanks to the button-mask fix in the pointer classes).
+     * RDP-only adaptive double-tap: the second tap sends NOTHING to the server yet.
+     * We only record the touch origin and arm the PENDING state, then let
+     * {@link #onTouchEvent(MotionEvent)} decide from the user's next move:
+     * <ul>
+     *   <li>finger MOVES past half the touch slop → plain press-and-drag (no preceding
+     *       click), so Windows drags the window / selects text instead of reading the
+     *       press as the second half of a double-click (which maximized title bars);</li>
+     *   <li>finger LIFTS without moving → a true double-click (click + click), so
+     *       word-select double-taps keep working.</li>
+     * </ul>
      */
     @Override
     public boolean onDoubleTap(MotionEvent e) {
@@ -295,74 +318,112 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         }
         GeneralUtils.debugLog(debugLogging, TAG, "onDoubleTap, e: " + e);
 
-        cancelPendingDoubleTapCommit();
+        rdpDoubleTapDownX = e.getX();
+        rdpDoubleTapDownY = e.getY();
+        rdpDoubleTapPending = true;
+        rdpDoubleTapDragging = false;
 
-        final int metaState = e.getMetaState();
-        doubleTapX = getX(e);
-        doubleTapY = getY(e);
-        doubleTapMeta = metaState;
-        doubleTapFingerUp = false;
-
-        performTapClick(doubleTapX, doubleTapY, metaState);
-
-        Handler handler = viewable.getHandler();
-        pendingDoubleTapCommit = new Runnable() {
-            @Override
-            public void run() {
-                pendingDoubleTapCommit = null;
-                if (doubleTapFingerUp) {
-                    // Finger lifted during the hold window — finish the second tap.
-                    performTapClick(doubleTapX, doubleTapY, doubleTapMeta);
-                } else {
-                    // Finger is still down — promote to a left-button drag from the tap point.
-                    dragMode = true;
-                    remoteInput.getPointer().leftButtonDown(doubleTapX, doubleTapY, doubleTapMeta);
-                }
-            }
-        };
-        handler.postDelayed(pendingDoubleTapCommit, DOUBLE_TAP_HOLD_MS);
         return true;
     }
 
     /**
-     * Tracks finger state while a double-tap-and-hold commit is pending so we can decide
-     * whether the user released (→ double-click) or kept the finger down (→ left-drag).
-     * Also re-anchors the long-press right-button release at the press position.
-     * All other touch behaviour flows unchanged through {@code super.onTouchEvent}.
+     * Drives the adaptive double-tap state machine (RDP only); everything else flows
+     * unchanged through {@code super.onTouchEvent}.
+     *
+     * <p>ACTION_DOWN clears leftover state before the detector feed inside super can
+     * re-arm it, ACTION_MOVE commits to a drag once the finger passes the slop,
+     * ACTION_UP emits the double-click, and ACTION_CANCEL releases a held button.
      */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         if (isRdp) {
-            int action = e.getActionMasked();
-            if (action == MotionEvent.ACTION_UP && rightDragFromLongPress) {
-                // Re-anchor the release at the press position. We do this BEFORE
-                // super.onTouchEvent runs so that the Generic UP path's
-                // releaseButton(getX(e), getY(e), meta) call (which uses the
-                // pointer's current position when rightDragMode has been cleared
-                // by endDragModesAndScrolling) lands on the press point instead
-                // of the finger-lift point. The MOVE path may have nudged the
-                // pointer slightly off press while the user held, so we restore.
-                remoteInput.getPointer().moveMouse(longPressReleaseX, longPressReleaseY, 0);
-                rightDragFromLongPress = false;
+            final int action = e.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                // Stale state from an aborted gesture must not survive into this one.
+                // super's detector feed calls onDoubleTap() (which arms PENDING) at the
+                // very end of this dispatch, so clearing here is safe.
+                rdpDoubleTapPending = false;
+                rdpDoubleTapDragging = false;
+                return super.onTouchEvent(e);
             }
-            if (pendingDoubleTapCommit != null) {
-                // We are inside the DOUBLE_TAP_HOLD_MS window for the second tap of a
-                // double-tap-and-hold gesture. Watch the primary finger.
-                if (action == MotionEvent.ACTION_UP) {
-                    if (e.getActionIndex() == 0) {
-                        doubleTapFingerUp = true;
+            if (rdpDoubleTapPending || rdpDoubleTapDragging) {
+                if (action == MotionEvent.ACTION_CANCEL) {
+                    // CANCEL during either pending or committed-drag state releases
+                    // the gesture. Generic UP/CANCEL won't release the held button
+                    // once dragMode is set, so cancelDoubleTapGesture's dragging
+                    // branch (releaseButton) has to run here.
+                    cancelDoubleTapGesture();
+                    return super.onTouchEvent(e);
+                }
+            }
+            if (rdpDoubleTapPending) {
+                switch (action) {
+                    case MotionEvent.ACTION_MOVE: {
+                        float dx = e.getX() - rdpDoubleTapDownX;
+                        float dy = e.getY() - rdpDoubleTapDownY;
+                        if (dx * dx + dy * dy > rdpTouchSlop * rdpTouchSlop) {
+                            commitDoubleTapDrag(e);
+                        }
+                        return super.onTouchEvent(e);
                     }
-                } else if (action == MotionEvent.ACTION_DOWN) {
-                    // A new gesture started (e.g. third tap, or new drag) — cancel the
-                    // pending commit. We don't flush anything because the third tap's
-                    // own onSingleTap/onDoubleTap will fire as the gesture detector
-                    // sees a fresh sequence.
-                    cancelPendingDoubleTapCommit();
-                    doubleTapFingerUp = false;
+                    case MotionEvent.ACTION_UP:
+                        emitDoubleTapDoubleClick(e);
+                        // Still feed super so the GestureDetector sees the UP and cancels
+                        // its armed LONG_PRESS timer — otherwise a quick double-tap would
+                        // be followed by a phantom right-click ~450ms later. The parent's
+                        // UP branch releaseButton is idempotent with no button held.
+                        super.onTouchEvent(e);
+                        return true; // consume; both clicks were already sent in full
                 }
             }
         }
         return super.onTouchEvent(e);
+    }
+
+    /**
+     * Commits the pending double-tap to a left-button drag: presses LEFT at the cursor
+     * position (touchpad semantics) and arms {@code dragMode} so the parent's ACTION_MOVE
+     * branch keeps moving the cursor with the button held. No click precedes the press,
+     * so the remote sees press+drag only (window moves, text selects).
+     */
+    private void commitDoubleTapDrag(MotionEvent e) {
+        int x = getX(e);
+        int y = getY(e);
+        remoteInput.getPointer().leftButtonDown(x, y, e.getMetaState());
+        dragMode = true;
+        // Re-anchor drag deltas at the commit point so the cursor does not jump by the
+        // slop distance the finger already travelled.
+        dragX = e.getX();
+        dragY = e.getY();
+        rdpDoubleTapPending = false;
+        rdpDoubleTapDragging = true;
+    }
+
+    /**
+     * Emits a true double-click (two full down/up pairs at the cursor position). Only
+     * called once the intent is confirmed — the finger lifted without moving.
+     */
+    private void emitDoubleTapDoubleClick(MotionEvent e) {
+        int x = getX(e);
+        int y = getY(e);
+        int m = e.getMetaState();
+        performTapClick(x, y, m);
+        performTapClick(x, y, m);
+        rdpDoubleTapPending = false;
+    }
+
+    /**
+     * Aborts the gesture (ACTION_CANCEL): releases the LEFT button if the drag was
+     * already committed, and clears the state machine.
+     */
+    private void cancelDoubleTapGesture() {
+        if (rdpDoubleTapDragging) {
+            int x = Math.round(remoteInput.getPointer().getX());
+            int y = Math.round(remoteInput.getPointer().getY());
+            remoteInput.getPointer().releaseButton(x, y, 0);
+        }
+        rdpDoubleTapPending = false;
+        rdpDoubleTapDragging = false;
     }
 
     private void performTapClick(int x, int y, int metaState) {
@@ -376,15 +437,11 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         viewable.movePanToMakePointerVisible();
     }
 
-    private void cancelPendingDoubleTapCommit() {
-        if (pendingDoubleTapCommit != null) {
-            viewable.getHandler().removeCallbacks(pendingDoubleTapCommit);
-            pendingDoubleTapCommit = null;
-        }
-    }
-
-    /*
-     * (non-Javadoc)
+    /**
+     * Cursor-anchored touchpad: when not in a drag mode, returns the current
+     * CURSOR position (not the touch position) so tap clicks land where the
+     * cursor is; drag deltas while in a drag mode are cursor-relative.
+     *
      * @see com.iiordanov.bVNC.input.InputHandlerGeneric#getX(android.view.MotionEvent)
      */
     protected int getX(MotionEvent e) {
@@ -398,8 +455,11 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         return remoteInput.getPointer().getX();
     }
 
-    /*
-     * (non-Javadoc)
+    /**
+     * Cursor-anchored touchpad: when not in a drag mode, returns the current
+     * CURSOR position (not the touch position) so tap clicks land where the
+     * cursor is; drag deltas while in a drag mode are cursor-relative.
+     *
      * @see com.iiordanov.bVNC.input.InputHandlerGeneric#getY(android.view.MotionEvent)
      */
     protected int getY(MotionEvent e) {
@@ -433,7 +493,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         delta = Math.abs(delta);
         boolean accelerated = remoteInput.getPointer().isAccelerated();
         if (delta <= 15) {
-            delta = delta * 0.75f;
+            // ponytail: small deltas pass through unscaled (was *0.75f — too sluggish).
         } else if (accelerated && delta <= 70.0f) {
             delta = delta * delta / 20.0f;
         } else if (accelerated) {

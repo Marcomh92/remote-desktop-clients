@@ -206,9 +206,19 @@ class ZoomScaling extends AbstractScaling {
      * hidden parts reachable by panning). For VNC/SPICE/Opaque the original
      * fit-to-screen minimum is returned unchanged.
      *
+     * The RDP cover floor is a function of the PHYSICAL (full-screen) canvas
+     * height — captured when the IME is closed — so the scaled bitmap overhangs
+     * the visible viewport when the IME opens. That overhang is what keeps
+     * {@code RemoteCanvas.movePanToMakePointerVisible}'s pan gate
+     * ({@code fbHeight < getVisibleDesktopHeight()}) false and lets the
+     * cursor-follow pan work. The {@code visibleHeight}/zoom floor is WRONG:
+     * self-referential — the floor shrinks with the viewport, so the image
+     * exactly covers the viewport, the "hidden" section behind the IME
+     * disappears from the math, and the gate disables the pan.
+     *
      * The result is recomputed on every call so that the floor tracks the live
      * viewport (e.g. when the soft keyboard opens/closes and changes
-     * {@code canvas.visibleHeight}).
+     * {@code canvas.rdpFullViewHeight}).
      */
     private float computeMinimumScale(RemoteCanvas canvas) {
         if (canvas == null)
@@ -216,7 +226,7 @@ class ZoomScaling extends AbstractScaling {
         if (!Utils.isRdp(canvas.getContext()))
             return canvas.getMinimumScale();
         int viewW = canvas.getWidth();
-        int viewH = (canvas.visibleHeight > 0) ? canvas.visibleHeight : canvas.getHeight();
+        int viewH = (canvas.getRdpFullViewHeight() > 0) ? canvas.getRdpFullViewHeight() : canvas.getHeight();
         int fbW = canvas.getImageWidth();
         int fbH = canvas.getImageHeight();
         if (fbW <= 0 || fbH <= 0 || viewW <= 0 || viewH <= 0)

@@ -6,13 +6,13 @@ This directory contains bug reports for known issues in this codebase.
 
 | ID | Title | Severity | Status |
 |---|---|---|---|
-| [BUG-001](BUG-001-run-locked-bat-missing.md) | `run-locked.bat` is missing from the repo root; all documented build/test wrappers fail with `'run-locked.bat' is not recognized`. | High — breaks all build/test wrapper scripts | Open |
 
 
 ## Closed Issues
 
 | ID                                                                         | Title                                                                                 | Severity | Status | Date fixed |
 |----------------------------------------------------------------------------|---------------------------------------------------------------------------------------|----------|--------|------------|
+| [BUG-001](fixed/BUG-001-run-locked-bat-missing.md) | `run-locked.bat` was missing from the repo root; all documented build/test wrappers failed with `'run-locked.bat' is not recognized`. | High — breaks all build/test wrapper scripts | FIXED | 2026-09-08 |
 
 
 ## Severity Legend

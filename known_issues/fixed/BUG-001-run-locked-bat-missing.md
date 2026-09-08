@@ -1,5 +1,7 @@
 # BUG-001 — `run-locked.bat` is missing from the repo root
 
+**Status: FIXED 2026-09-08.** `run-locked.bat` (paired with `run-with-lock.ps1`) is now committed at the repo root; the wrapper scripts work as documented. The "Workaround" section below has been retained for the historical record.
+
 ## Summary
 
 `run-locked.bat` is referenced as the very first executable step by every documented build/test wrapper (`compile.bat`, `test-all.bat`, `test-package.bat`, `test-class.bat`), but the file is not present in the repo root. Running any of those wrappers fails immediately with `'run-locked.bat' is not recognized as an internal or external command`. Build and test execution via the documented wrapper scripts is therefore broken.

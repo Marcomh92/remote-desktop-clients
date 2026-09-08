@@ -103,6 +103,12 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
     int visibleHeight = -1;
 
     /*
+     * RDP: physical (full-screen) canvas height captured when the IME is closed; the zoom floor and
+     * viewport math use this so the IME never re-scales the desktop or disables the pan.
+     */
+    private int rdpFullViewHeight = -1;
+
+    /*
      * These variables contain the width and height of the display in pixels
      */
     int displayWidth;
@@ -865,6 +871,14 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
 
     public void setVisibleDesktopHeight(int newHeight) {
         visibleHeight = newHeight;
+    }
+
+    public void setRdpFullViewHeight(int height) {
+        rdpFullViewHeight = height;
+    }
+
+    int getRdpFullViewHeight() {
+        return rdpFullViewHeight;
     }
 
     public int getImageWidth() {

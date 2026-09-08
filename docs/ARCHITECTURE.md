@@ -169,7 +169,7 @@ Schema migrations live at `Database.java:283-596`. Each `DBV_*` constant corresp
 | `test-package.bat <pkg-spec>` | Resolves module via `resolve-test-module.ps1`, runs `gradlew.bat <task> --tests %1` | Optional module arg if class lives in more than one |
 | `test-class.bat <class>` | Same as `test-package.bat` but for a single class | Prints `Tests passed` |
 
-> **All four wrappers fail today.** They all `call run-locked.bat` as their first line, and `run-locked.bat` is not in the repo root. Tracked as `known_issues/BUG-001`. Workaround: invoke `gradlew.bat` directly with the same flags, e.g. `gradlew.bat assembleDebug --no-daemon --console=plain --quiet --warning-mode none` or `gradlew.bat :common:testDebugUnitTest --no-daemon --console=plain --quiet --warning-mode none`.
+> All four wrappers `call run-locked.bat` as their first line; `run-locked.bat` (paired with `run-with-lock.ps1`) serializes builds via a `PowerShell` file lock. Wrappers work as documented.
 >
 > **AGENTS.md notes `compile.bat`.** That file does not exist on disk; use `gradlew.bat assembleDebug` directly. Treat the AGENTS.md table as illustrative of intended scripts, not authoritative.
 

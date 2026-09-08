@@ -74,6 +74,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.snackbar.Snackbar;
 import com.iiordanov.bVNC.dialogs.EnterTextDialog;
@@ -168,6 +169,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     private FrameLayout rdpInputAreaContainer;
     private RdpModifierRowHandler rdpModifierRowHandler;
     private InputAreaState inputAreaState = InputAreaState.NONE;
+    private int lastImeHeightPx = 0; // RDP IME inset height in px; 0 = IME closed
     ActionBarPositionSaver toolbarPositionSaver = new ActionBarPositionSaver();
     int xPointerOffset = 0;
     int yPointerOffset = 0;
@@ -287,6 +289,14 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
+        // RDP only: make the window resize when the IME comes up so the canvas shrinks and
+        // getWindowVisibleDisplayFrame().bottom drops. Otherwise the relayout heuristic never
+        // detects the IME and the RDP modifier row ends up translated off-screen.
+        if (Utils.isRdp(this)) {
+            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+
         Utils.showMenu(this);
 
         setContentView(R.layout.canvas);
@@ -297,6 +307,36 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         if (Utils.isRdp(this)) {
             keyboardToggleButton = findViewById(R.id.keyboardToggleButton);
             rdpInputAreaContainer = findViewById(R.id.rdpInputAreaContainer);
+
+            // RDP-only: drive input-area state and viewport recompute from the IME inset.
+            // The 19% relayout heuristic cannot see the IME on devices where the window
+            // does not resize when the soft keyboard comes up; the insets listener covers
+            // that model and is idempotent under the resize model.
+            ViewCompat.setOnApplyWindowInsetsListener(canvasLayout, (v, insets) -> {
+                if (canvasLayout.getHeight() <= 0) {
+                    return insets;
+                }
+                int ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+                // Bogus-IME guard: clamp absurd inset values to a closed-IME sentinel so
+                // we never trigger a phantom KEYBOARD state on first-frame events or
+                // transient insets during configuration changes. Use the physical full
+                // height (not canvasLayout.getHeight()) as the denominator: when the
+                // window DOES resize, the canvas shrank and a real IME height would
+                // otherwise be clamped to zero and the modifier row would vanish.
+                int imeMaxHeight = canvas.getRdpFullViewHeight() > 0 ? canvas.getRdpFullViewHeight() : canvasLayout.getHeight() + lastImeHeightPx;
+                if (ime > imeMaxHeight / 2) {
+                    ime = 0;
+                }
+                lastImeHeightPx = ime;
+                if (lastImeHeightPx > 0 && inputAreaState == InputAreaState.NONE) {
+                    setInputAreaState(InputAreaState.KEYBOARD);
+                } else if (lastImeHeightPx == 0 && inputAreaState == InputAreaState.KEYBOARD) {
+                    setInputAreaState(InputAreaState.NONE);
+                }
+                recomputeRdpViewport();
+                return insets;
+            });
+            ViewCompat.requestApplyInsets(canvasLayout);
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -466,8 +506,15 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 Log.d(TAG, "onGlobalLayout: Setting VisibleDesktopHeight to: " + usableHeight +
                         ", extraKeysHeight: " + extraKeysHeight +
                         ", rdpInputAreaHeight: " + bottomShrinkHeight);
-                canvas.setVisibleDesktopHeight(usableHeight);
-                canvas.relativePan(0, 0);
+                // RDP viewport math is owned by recomputeRdpViewport() (driven by the IME
+                // insets listener and by setInputAreaState). On the no-window-resize model
+                // the legacy r.bottom here stays at full-screen height when the IME is
+                // open, which would write a too-large visibleDesktopHeight and prevent the
+                // cover floor from overhanging the IME. Skip the write for RDP.
+                if (!Utils.isRdp(this)) {
+                    canvas.setVisibleDesktopHeight(usableHeight);
+                    canvas.relativePan(0, 0);
+                }
             } else {
                 Log.d(TAG, "onGlobalLayout: canvas.myDrawable is null");
             }
@@ -559,6 +606,14 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 " layoutKeysBottom: " + layoutKeysBottom + " rootViewBottom: " + rootViewBottom + " toolbarBottom: " + toolbarBottom +
                 " diffLayoutKeysPosition: " + diffLayoutKeysPosition + " diffToolbarPosition: " + diffToolbarPosition);
 
+        // RDP viewport math is owned by recomputeRdpViewport(). On every onGlobalLayout
+        // (rotation, resize, IME-driven layout passes) we re-apply it so the visible
+        // desktop height and the rdpInputAreaContainer translation track the latest
+        // canvas/IME state. No-op for VNC/SPICE/Opaque.
+        if (Utils.isRdp(this)) {
+            recomputeRdpViewport();
+        }
+
         recalculateYPointerOffset();
     }
 
@@ -620,12 +675,6 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         extraKeysToolbar.setTranslationY(diffLayoutKeysPosition);
         if (extraKeysPageIndicator != null)
             extraKeysPageIndicator.setTranslationY(diffLayoutKeysPosition);
-        // RDP: ride the modifier-key row / extra-keys grid container along with the same
-        // offset so it sits directly above the IME. Container visibility is driven by
-        // the input-area state machine; this only sets the translation.
-        if (Utils.isRdp(this) && rdpInputAreaContainer != null) {
-            rdpInputAreaContainer.setTranslationY(diffLayoutKeysPosition);
-        }
         offsetOrRestoreSavedToolbarPosition(r, diffToolbarPosition, standardToolbarPositionX, standardToolbarPositionY);
     }
 
@@ -1232,7 +1281,8 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
 
     float getTouchpadSensitivityMultiplier() {
         int slider = Utils.querySharedPreferencesInt(this, Constants.touchpadSensitivity, Constants.DEFAULT_TOUCHPAD_SENSITIVITY);
-        return (slider + 1) * 0.4f;
+        // Coefficient tuned to MS-RDP feel (0.4 was too slow on 560dpi devices).
+        return (slider + 1) * 0.6f;
     }
 
     @Override
@@ -1569,6 +1619,56 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             rdpModifierRowHandler.onInputAreaStateChanged(this.inputAreaState);
         }
         updateRdpInputAreaVisibility();
+        // RDP viewport math depends on the input-area container's measured
+        // height (VISIBLE for KEYBOARD/EXTRA, GONE for NONE), so we must
+        // recompute after the visibility flip above.
+        if (Utils.isRdp(this) && canvas != null) {
+            recomputeRdpViewport();
+        }
+    }
+
+    /**
+     * RDP-only viewport recompute driven by the IME insets listener and the
+     * {@link #setInputAreaState} transition. Captures the physical (full-screen)
+     * canvas height once when the IME is closed, then shrinks
+     * {@code canvas.visibleDesktopHeight} by the IME height and the visible
+     * RDP input-area container height so the canvas never overlaps the IME.
+     * Lifts the container out of the IME region via {@code setTranslationY}
+     * for the no-window-resize model; the resize model does not need a
+     * translation because the container is already bottom-gravity inside the
+     * resized window.
+     */
+    private void recomputeRdpViewport() {
+        if (canvas == null || canvas.getDrawable() == null) return;
+        int canvasH = canvas.getHeight();
+        if (canvasH <= 0) return;
+        if (lastImeHeightPx == 0) {
+            // IME closed: canvas height IS the physical full-screen height. Refresh on
+            // every recompute so rotation / multi-window resize update the zoom floor
+            // even when the activity itself survives those configuration changes.
+            canvas.setRdpFullViewHeight(canvas.getHeight());
+        } else if (canvas.getRdpFullViewHeight() <= 0) {
+            // First capture while IME is already open: add back the IME height so the
+            // floor matches the pre-IME physical height.
+            canvas.setRdpFullViewHeight(canvas.getHeight() + lastImeHeightPx);
+        }
+        int containerH = 0;
+        if (rdpInputAreaContainer != null && rdpInputAreaContainer.getVisibility() == View.VISIBLE) {
+            int ch = rdpInputAreaContainer.getHeight();
+            containerH = (ch > 0) ? ch : 0; // first-pass-zero guard
+        }
+        int usable = canvas.getRdpFullViewHeight() - lastImeHeightPx - containerH;
+        if (usable < 0) usable = 0;
+        canvas.setVisibleDesktopHeight(usable);
+        canvas.relativePan(0, 0);
+        if (rdpInputAreaContainer != null) {
+            // If the window did not resize, canvasH == full-height and the IME
+            // overlaps the full canvas: lift the container by imeOverlap = ime.
+            // If the window did resize, canvasH ≈ full-ime and imeOverlap ≈ 0,
+            // leaving the bottom-gravity container in place with no translation.
+            int imeOverlap = Math.max(0, lastImeHeightPx - (canvas.getRdpFullViewHeight() - canvasH));
+            rdpInputAreaContainer.setTranslationY(-imeOverlap);
+        }
     }
 
     /**
