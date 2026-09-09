@@ -18,6 +18,8 @@ Round-5 added the RDP-only double-back-to-disconnect flow in `RemoteCanvasActivi
 
 A grep of the codebase confirms there is no `OnBackPressedDispatcher` or `OnBackInvokedCallback` registration anywhere in the project — no Activity uses the modern dispatch path. The codebase is wholly on the legacy `onBackPressed` override.
 
+**Round-6-follow-up correction.** The manifest opt-out above is necessary but not sufficient. `RemoteCanvasActivity.setInputHandler` registers `canvas.setOnKeyListener(inputListener)` where `inputListener` is `RemoteClientsInputListener` (see `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteClientsInputListener.kt:53-75`). The listener intercepts every hardware key before `Activity.onKeyDown`/`dispatchKeyEvent` — including `KEYCODE_BACK` — and for connected RDP sessions forwards it to the remote as `VK_ESCAPE` via `RdpKeyboardMapper.keymapAndroid[KEYCODE_BACK] = VK_ESCAPE` (`remoteClientLib/.../input/RdpKeyboardMapper.java:343`), then returns `true`. With the listener returning `true`, the View consumes the press and `Activity.onBackPressed` never runs even when the framework would otherwise dispatch there. The follow-up fix made the BACK branch at `RemoteClientsInputListener.kt:60-62` short-circuit to `return false` when `isTv || Utils.isRdp(activity)` — so BACK passes through to the Activity, where the existing branches at `RemoteCanvasActivity.onBackPressed:1793-1821` take over (TV: immediate disconnect; RDP: KEYBOARD/EXTRA collapse, then the double-back toast + `disconnectAndFinishActivity()` path). Non-RDP non-TV behaviour is unchanged: BACK is still forwarded to the remote as `VK_ESCAPE`.
+
 ---
 
 ## Decision
@@ -30,6 +32,8 @@ Declare `android:enableOnBackInvokedCallback="false"` on `<application>` in `bVN
 ```
 
 The flag is a deliberate, scoped opt-out. It exists for one reason: keep round-5's double-back disconnect reachable on Android 13+.
+
+The flag restores framework dispatch to `Activity.onBackPressed`. The round-6-follow-up fix (`RemoteClientsInputListener.kt:60-62`) provides the complementary piece: the canvas View's `OnKeyListener` must also let BACK through to the Activity for connected RDP sessions (and for TV, as before). Together they form the mechanism that makes the round-5 disconnect flow reachable — the manifest flag alone is necessary but not sufficient; both must hold.
 
 ---
 
@@ -97,6 +101,7 @@ Cons:
 - `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java:1808-1817` — the round-5 double-back disconnect branch that this flag protects.
 - `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java:174-175` — `DOUBLE_BACK_DISCONNECT_WINDOW_MS = 2000L` constant and `lastBackPressForDisconnect` field.
 - `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvasActivity.java:895` — `lastBackPressForDisconnect = 0` reset in `onPause`.
+- `bVNC/src/main/java/com/iiordanov/bVNC/input/RemoteClientsInputListener.kt:60-62` — round-6-follow-up: BACK short-circuits to `return false` when `isTv || Utils.isRdp(activity)`, passing the press to `Activity.onBackPressed` instead of forwarding it to the remote as `VK_ESCAPE`.
 - `bVNC/src/main/res/values/strings.xml:83` — `back_press_to_disconnect` toast string.
 - Every wrapper `AndroidManifest.xml` (in `aRDP-app/`, `freeaRDP-app/`, `bVNC-app/`, `freebVNC-app/`, `aSPICE-app/`, `freeaSPICE-app/`, `Opaque-app/`, `CustomVnc-app/`) — manifests merged against the library manifest and inherit the flag.
 

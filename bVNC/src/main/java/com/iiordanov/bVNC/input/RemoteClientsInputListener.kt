@@ -31,6 +31,7 @@ import android.view.View
 import com.iiordanov.bVNC.App
 import com.iiordanov.bVNC.Constants
 import com.iiordanov.bVNC.RemoteCanvasActivity
+import com.iiordanov.bVNC.Utils
 import com.undatech.opaque.input.InputConstants
 import com.undatech.opaque.util.GeneralUtils
 import java.util.concurrent.ExecutorService
@@ -56,8 +57,8 @@ class RemoteClientsInputListener(
             return if (evt.action == KeyEvent.ACTION_DOWN) activity.onKeyDown(
                 keyCode, evt
             ) else activity.onKeyUp(keyCode, evt)
-        } else if (isTv && keyCode == KeyEvent.KEYCODE_BACK) {
-            Log.i(tag, "Not capturing back button on Android TV")
+        } else if ((isTv || Utils.isRdp(activity)) && keyCode == KeyEvent.KEYCODE_BACK) {
+            Log.i(tag, "Not capturing back button on Android TV or RDP")
             return false
         }
         try {
