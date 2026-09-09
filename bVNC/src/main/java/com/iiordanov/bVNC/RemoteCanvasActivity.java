@@ -139,7 +139,6 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         );
     }
 
-    final long hideToolbarDelay = 2500;
     TouchInputHandler touchInputHandler;
     Panner panner;
     Handler handler;
@@ -151,8 +150,6 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     volatile boolean softKeyboardUp;
     RemoteToolbar toolbar;
     View rootView;
-    ActionBarHider actionBarHider = new ActionBarHider();
-    ActionBarShower actionBarShower = new ActionBarShower();
     KeyboardIconShower keyboardIconShower = new KeyboardIconShower();
     private Vibrator myVibrator;
     private FrameLayout canvasLayout;
@@ -166,15 +163,15 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     private ImageButton keyboardIconForAndroidTv;
     float keyboardIconForAndroidTvX = Float.MAX_VALUE;
     IgnoringMouseInputListener ignoringMouseInputListener = new IgnoringMouseInputListener();
-    OnTouchViewMover toolbarMover;
     private ImageButton keyboardToggleButton;
+    private ImageButton toolbarToggleButton;
+    private boolean toolbarExpanded = false;
     private FrameLayout rdpInputAreaContainer;
     private RdpModifierRowHandler rdpModifierRowHandler;
     private InputAreaState inputAreaState = InputAreaState.NONE;
     private static final long DOUBLE_BACK_DISCONNECT_WINDOW_MS = 2000L;
     private long lastBackPressForDisconnect = 0;
     private int lastImeHeightPx = 0; // RDP IME inset height in px; 0 = IME closed
-    ActionBarPositionSaver toolbarPositionSaver = new ActionBarPositionSaver();
     int xPointerOffset = 0;
     int yPointerOffset = 0;
 
@@ -311,8 +308,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             canvas.setEdgeThresholdDp(getEdgeThresholdDpPref());
         }
         keyboardIconForAndroidTv = findViewById(R.id.keyboardIconForAndroidTv);
+        // Both floating buttons are visible on every flavor: the keyboard FAB
+        // toggles the IME (state-machine on RDP, plain show/hide elsewhere),
+        // and the toolbar-toggle FAB expands the action-bar toolbar.
+        keyboardToggleButton = findViewById(R.id.keyboardToggleButton);
+        toolbarToggleButton = findViewById(R.id.toolbarToggleButton);
         if (Utils.isRdp(this)) {
-            keyboardToggleButton = findViewById(R.id.keyboardToggleButton);
             rdpInputAreaContainer = findViewById(R.id.rdpInputAreaContainer);
 
             // RDP-only: drive input-area state and viewport recompute from the IME inset.
@@ -472,7 +473,16 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         toolbar.getBackground().setAlpha(64);
         toolbar.setLayoutParams(params);
         setSupportActionBar(toolbar);
-        showActionBar();
+
+        // Mirror the toolbar's leftHandedModeTag gravity on the toggle FAB so
+        // the FAB starts on the same side as the toolbar it owns. After this,
+        // the user can still drag either element independently.
+        if (toolbarToggleButton != null) {
+            FrameLayout.LayoutParams fabParams =
+                (FrameLayout.LayoutParams) toolbarToggleButton.getLayoutParams();
+            fabParams.gravity = params.gravity;
+            toolbarToggleButton.setLayoutParams(fabParams);
+        }
     }
 
     void relayoutViews(View rootView) {
@@ -685,20 +695,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         offsetOrRestoreSavedToolbarPosition(r, diffToolbarPosition, standardToolbarPositionX, standardToolbarPositionY);
     }
 
+    // The toolbar's own Y is no longer shifted when the IME comes up: the toolbar
+    // is hidden by default and only shown when the @+id/toolbarToggleButton FAB
+    // is tapped. We still need a hook for relayoutViews(), however, so use the
+    // call site to re-anchor the FAB to its saved drag position.
     private void offsetOrRestoreSavedToolbarPosition(Rect r, int diffToolbarPosition, int standardPositionX, int standardPositionY) {
-        boolean useLastPosition = connection.getUseLastPositionToolbar();
-        boolean toolbarMoved = connection.getUseLastPositionToolbarMoved();
-        if (!useLastPosition || !toolbarMoved) {
-            toolbar.offsetTopAndBottom(diffToolbarPosition);
-        } else {
-            toolbar.setPositionToMakeVisible(
-                    connection.getUseLastPositionToolbarX(),
-                    connection.getUseLastPositionToolbarY(),
-                    r.right,
-                    r.bottom,
-                    standardPositionX,
-                    standardPositionY);
-        }
+        restoreToolbarTogglePosition();
     }
 
     public void extraKeysToggle(MenuItem m) {
@@ -1062,15 +1064,13 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
 
     @Override
     public void onPanelClosed(int featureId, @NonNull Menu menu) {
-        showActionBar();
         super.onPanelClosed(featureId, menu);
     }
 
     @Override
     public boolean onMenuOpened(int featureId, Menu menu) {
         if (menu != null) {
-            Log.i(TAG, "Menu opened, disabling hiding action bar");
-            handler.removeCallbacks(actionBarHider);
+            Log.i(TAG, "Menu opened");
             updateScalingMenu();
             updateInputMenu();
         }
@@ -1119,20 +1119,16 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             else
                 menu.findItem(R.id.itemExtraKeys).setTitle(R.string.extra_keys_enable);
 
-            toolbarMover = new OnTouchViewMover(toolbar, handler, toolbarPositionSaver, actionBarHider, hideToolbarDelay);
-            if (Utils.isRdp(this) && keyboardToggleButton != null && handler != null) {
-                // Show the button only on the RDP flavor; the layout defaults it
-                // to gone so bVNC/aSPICE/Opaque don't expose a listener-less icon.
-                keyboardToggleButton.setVisibility(View.VISIBLE);
-                // Inline drag-to-move listener that mirrors OnTouchViewMover's
-                // dX/dY offset + animate().x/y().setDuration(0) pattern, but
-                // dispatches a click on ACTION_UP only when the finger stayed
-                // within the scaled touch slop. OnTouchViewMover returns true
-                // for ACTION_DOWN/MOVE which marks the gesture consumed, so
-                // View.onTouchEvent never runs and performClick() is never
-                // invoked — that's the click-bug this fix replaces. We also
-                // drive the pressed drawable manually so the button gives
-                // immediate touch feedback (View.onTouchEvent is bypassed).
+            // Always-on keyboard FAB: draggable + click dispatches the toggle handler.
+            // Inline drag-vs-tap listener (mirrors OnTouchViewMover's dX/dY offset +
+            // animate().x/y().setDuration(0) pattern) but dispatches a click on
+            // ACTION_UP only when the finger stayed within the scaled touch slop.
+            // OnTouchViewMover returns true for ACTION_DOWN/MOVE which marks the
+            // gesture consumed, so View.onTouchEvent never runs and performClick()
+            // is never invoked — that's the click-bug this fix replaces. We also
+            // drive the pressed drawable manually so the button gives immediate
+            // touch feedback (View.onTouchEvent is bypassed).
+            if (keyboardToggleButton != null && handler != null) {
                 final int touchSlop = ViewConfiguration.get(keyboardToggleButton.getContext()).getScaledTouchSlop();
                 final float[] fingerDownXY = new float[2];
                 final float[] dx = new float[1];
@@ -1177,12 +1173,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 });
                 keyboardToggleButton.setOnClickListener(v -> onKeyboardToggleButtonClicked());
             }
-            ImageButton moveButton = new ImageButton(this);
-
-            moveButton.setBackgroundResource(R.drawable.ic_all_out_gray_36dp);
-            MenuItem moveToolbar = menu.findItem(R.id.moveToolbar);
-            moveToolbar.setActionView(moveButton);
-            moveButton.setOnTouchListener(toolbarMover);
+            setupToolbarToggleButton();
 
             // Set up scroll wheel button
             MenuItem scrollWheelItem = menu.findItem(R.id.actionScrollWheel);
@@ -1590,17 +1581,18 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     }
 
     public void showActionBar() {
-        handler.removeCallbacks(actionBarShower);
-        handler.postAtTime(actionBarShower, SystemClock.uptimeMillis() + 50);
-        handler.removeCallbacks(actionBarHider);
-        handler.postAtTime(actionBarHider, SystemClock.uptimeMillis() + hideToolbarDelay);
+        // No-op: the toolbar is no longer auto-shown/hidden on touch input.
+        // The toolbar (RemoteToolbar) is the action bar but is now anchored to
+        // the @+id/toolbarToggleButton FAB and toggled by tapping that FAB.
+        // Kept as a no-op so legacy callers (TouchInputDelegate touch handlers,
+        // ScrollWheelButton) still compile.
     }
 
     public void showKeyboardIcon() {
+        // TV-only: schedule the keyboard-icon shower; no longer touches the
+        // action bar (the toolbar auto-show/hide on touch was removed).
         handler.removeCallbacks(keyboardIconShower);
         handler.postAtTime(keyboardIconShower, SystemClock.uptimeMillis() + 50);
-        handler.removeCallbacks(actionBarHider);
-        handler.postAtTime(actionBarHider, SystemClock.uptimeMillis() + hideToolbarDelay);
     }
 
     @Override
@@ -1627,6 +1619,9 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         canvas.requestFocus();
         Utils.showKeyboard(this, canvas);
         softKeyboardUp = true;
+        // Keyboard takes the screen; collapse any visible toolbar so a stale
+        // toolbarExpanded flag doesn't trap the next toggle-FAB tap as a no-op.
+        toolbarExpanded = false;
         Objects.requireNonNull(getSupportActionBar()).hide();
     }
 
@@ -1635,6 +1630,10 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         canvas.requestFocus();
         Utils.hideKeyboard(this, getCurrentFocus());
         softKeyboardUp = false;
+        // Keep toolbarExpanded in sync with what the user can see.
+        if (getSupportActionBar() != null && !getSupportActionBar().isShowing()) {
+            toolbarExpanded = false;
+        }
         Objects.requireNonNull(getSupportActionBar()).hide();
     }
 
@@ -1756,18 +1755,186 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
      *      always lands on the IME).
      */
     private void onKeyboardToggleButtonClicked() {
-        if (!Utils.isRdp(this)) {
-            return;
-        }
-        // Tell the handler to land on the IME (and collapse the extra-keys grid
-        // if it is showing); onBackToKeyboard calls Utils.showKeyboard internally
-        // and requests canvas focus itself, so this method stays the single entry
-        // point for IME-show on this button.
-        if (rdpModifierRowHandler != null) {
-            rdpModifierRowHandler.onBackToKeyboard();
+        if (Utils.isRdp(this)) {
+            // RDP: land on the IME (and collapse the extra-keys grid if it is
+            // showing); onBackToKeyboard calls Utils.showKeyboard internally
+            // and requests canvas focus itself, so this method stays the single
+            // entry point for IME-show on this button.
+            if (rdpModifierRowHandler != null) {
+                rdpModifierRowHandler.onBackToKeyboard();
+            } else {
+                setInputAreaState(InputAreaState.KEYBOARD);
+            }
+        } else if (softKeyboardUp) {
+            hideKeyboard();
         } else {
-            setInputAreaState(InputAreaState.KEYBOARD);
+            showKeyboard();
         }
+    }
+
+    /**
+     * Wires the always-visible @+id/toolbarToggleButton FAB with a drag-vs-tap
+     * touch listener and a click listener that expands/collapses the
+     * RemoteToolbar action bar. Mirrors the keyboard FAB's click-bug-fix
+     * pattern (ACTION_UP dispatches performClick only when the finger stayed
+     * within scaledTouchSlop), and persists the new x/y to the same per-id
+     * USELASTPOSITIONTOOLBAR_* columns the moveToolbar drag handle used.
+     */
+    private void setupToolbarToggleButton() {
+        if (toolbarToggleButton == null || handler == null) return;
+        final int touchSlop = ViewConfiguration.get(toolbarToggleButton.getContext()).getScaledTouchSlop();
+        final float[] fingerDownXY = new float[2];
+        final float[] dx = new float[1];
+        final float[] dy = new float[1];
+        final boolean[] movedBeyondSlop = new boolean[1];
+        toolbarToggleButton.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    fingerDownXY[0] = event.getRawX();
+                    fingerDownXY[1] = event.getRawY();
+                    dx[0] = v.getX() - event.getRawX();
+                    dy[0] = v.getY() - event.getRawY();
+                    movedBeyondSlop[0] = false;
+                    v.setPressed(true);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (!movedBeyondSlop[0]) {
+                        float totalDx = event.getRawX() - fingerDownXY[0];
+                        float totalDy = event.getRawY() - fingerDownXY[1];
+                        if (Math.abs(totalDx) > touchSlop || Math.abs(totalDy) > touchSlop) {
+                            movedBeyondSlop[0] = true;
+                        }
+                    }
+                    if (movedBeyondSlop[0]) {
+                        v.animate().x(event.getRawX() + dx[0])
+                                .y(event.getRawY() + dy[0])
+                                .setDuration(0).start();
+                    }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    v.setPressed(false);
+                    if (!movedBeyondSlop[0]) {
+                        v.performClick();
+                    } else {
+                        saveToolbarTogglePosition((int) v.getX(), (int) v.getY());
+                    }
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    v.setPressed(false);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        toolbarToggleButton.setOnClickListener(v -> toggleToolbarExpansion());
+    }
+
+    /**
+     * Toggles visibility of the action-bar RemoteToolbar next to the
+     * @+id/toolbarToggleButton FAB. While the IME is up the toolbar stays
+     * hidden (showKeyboard/hideKeyboard own the screen); a tap on the FAB
+     * is a no-op in that state so we never overlap the keyboard with the
+     * toolbar.
+     */
+    private void toggleToolbarExpansion() {
+        ActionBar actionBar = getSupportActionBar();
+        if (actionBar == null) return;
+        if (toolbarExpanded) {
+            actionBar.hide();
+            toolbarExpanded = false;
+        } else if (!softKeyboardUp) {
+            positionToolbarNextToToggle();
+            actionBar.show();
+            toolbarExpanded = true;
+        }
+    }
+
+    /**
+     * Anchors the action-bar toolbar to a position next to the toolbar-toggle
+     * FAB. Prefers the left side of the FAB (free space on the left is the
+     * dominant layout in this app), and falls back to the right side if there
+     * is not enough room to fit the toolbar without clipping. Clamps the final
+     * coordinates so the toolbar stays inside the canvasLayout bounds.
+     */
+    private void positionToolbarNextToToggle() {
+        if (toolbar == null || toolbarToggleButton == null || canvasLayout == null) return;
+        // Toolbar is GONE by default — measure explicitly with INVISIBLE so the
+        // getWidth/getHeight / getMeasuredWidth calls return real numbers.
+        if (toolbar.getVisibility() != View.VISIBLE) {
+            toolbar.setVisibility(View.INVISIBLE);
+        }
+        int toolbarW = toolbar.getWidth();
+        int toolbarH = toolbar.getHeight();
+        if (toolbarW == 0 || toolbarH == 0) {
+            int widthSpec = View.MeasureSpec.makeMeasureSpec(canvasLayout.getWidth(), View.MeasureSpec.AT_MOST);
+            int heightSpec = View.MeasureSpec.makeMeasureSpec(canvasLayout.getHeight(), View.MeasureSpec.AT_MOST);
+            toolbar.measure(widthSpec, heightSpec);
+            toolbarW = toolbar.getMeasuredWidth();
+            toolbarH = toolbar.getMeasuredHeight();
+            toolbar.layout(0, 0, toolbarW, toolbarH);
+        }
+        int toggleX = (int) toolbarToggleButton.getX();
+        int toggleY = (int) toolbarToggleButton.getY();
+        int toggleW = toolbarToggleButton.getWidth();
+        int toggleH = toolbarToggleButton.getHeight();
+        int canvasW = canvasLayout.getWidth();
+        int canvasH = canvasLayout.getHeight();
+        int margin = (int) (8 * getResources().getDisplayMetrics().density);
+        int toggleCenterX = toggleX + toggleW / 2;
+        int toggleCenterY = toggleY + toggleH / 2;
+
+        // Prefer left of the FAB; fall back to right if there isn't room.
+        int newX;
+        if (toggleCenterX >= toolbarW + 2 * margin) {
+            newX = toggleX - toolbarW - margin;
+        } else {
+            newX = toggleX + toggleW + margin;
+        }
+        int newY = toggleCenterY - toolbarH / 2;
+
+        // Clamp to canvas bounds.
+        newX = Math.max(margin, Math.min(newX, canvasW - toolbarW - margin));
+        newY = Math.max(margin, Math.min(newY, canvasH - toolbarH - margin));
+
+        toolbar.setX(newX);
+        toolbar.setY(newY);
+    }
+
+    /**
+     * Re-applies the saved toolbar-toggle FAB position on every layout pass
+     * (same pattern as the legacy @code offsetOrRestoreSavedToolbarPosition)
+     * so the FAB sticks to where the user dragged it. If the saved position
+     * is no longer on the canvas (rotation, smaller window, etc.) we leave the
+     * FAB at the gravity default.
+     */
+    private void restoreToolbarTogglePosition() {
+        if (toolbarToggleButton == null || canvasLayout == null || connection == null) return;
+        if (!connection.getUseLastPositionToolbar() || !connection.getUseLastPositionToolbarMoved()) return;
+        int savedX = connection.getUseLastPositionToolbarX();
+        int savedY = connection.getUseLastPositionToolbarY();
+        int btnW = toolbarToggleButton.getWidth();
+        int btnH = toolbarToggleButton.getHeight();
+        if (btnW == 0 || btnH == 0) return; // not yet measured
+        int canvasW = canvasLayout.getWidth();
+        int canvasH = canvasLayout.getHeight();
+        if (savedX >= 0 && savedY >= 0
+                && savedX + btnW <= canvasW
+                && savedY + btnH <= canvasH) {
+            toolbarToggleButton.setX(savedX);
+            toolbarToggleButton.setY(savedY);
+        }
+    }
+
+    private void saveToolbarTogglePosition(int x, int y) {
+        if (connection == null) return;
+        connection.setUseLastPositionToolbarX(x);
+        connection.setUseLastPositionToolbarY(y);
+        connection.setUseLastPositionToolbarMoved(true);
+        // connection.save() runs an SQLite UPDATE on the caller thread (see
+        // Database.runWritable). Defer off the UI thread to match the pre-existing
+        // ActionBarPositionSaver pattern (handler.postAtTime) the user removed.
+        final Connection c = connection;
+        handler.post(() -> c.save(RemoteCanvasActivity.this));
     }
 
     public Connection getConnection() {
@@ -1826,43 +1993,6 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
 
     public Handler getHandler() { return handler; }
 
-    private class ActionBarPositionSaver implements Runnable {
-        public void run() {
-            connection.setUseLastPositionToolbarX(toolbarMover.getLastX());
-            connection.setUseLastPositionToolbarY(toolbarMover.getLastY());
-            connection.setUseLastPositionToolbarMoved(true);
-            connection.save(RemoteCanvasActivity.this);
-        }
-    }
-
-    private class ActionBarHider implements Runnable {
-        public void run() {
-            if (GeneralUtils.isTv(RemoteCanvasActivity.this)) {
-                keyboardIconForAndroidTv.setVisibility(View.GONE);
-            } else {
-                ActionBar actionBar = getSupportActionBar();
-                if (actionBar != null) {
-                    Log.d(TAG, "ActionBarHider: Hiding ActionBar");
-                    actionBar.hide();
-                }
-            }
-        }
-    }
-
-    private class ActionBarShower implements Runnable {
-        public void run() {
-            showActionBar();
-        }
-
-        private void showActionBar() {
-            ActionBar actionBar = getSupportActionBar();
-            if (actionBar != null) {
-                Log.d(TAG, "ActionBarShower: Showing ActionBar");
-                actionBar.show();
-            }
-        }
-    }
-
     private class KeyboardIconShower implements Runnable {
         public void run() {
             if (GeneralUtils.isTv(RemoteCanvasActivity.this)) {
@@ -1872,7 +2002,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
 
         private void animateKeyboardIconForAndroidTv() {
             keyboardIconForAndroidTv.setVisibility(View.VISIBLE);
-            Log.d(TAG, "ActionBarHider: keyboardIconForAndroidTv X position to: " + keyboardIconForAndroidTvX);
+            Log.d(TAG, "KeyboardIconShower: keyboardIconForAndroidTv X position to: " + keyboardIconForAndroidTvX);
             keyboardIconForAndroidTv.setX(keyboardIconForAndroidTvX);
             ObjectAnimator animation = ObjectAnimator.ofFloat(keyboardIconForAndroidTv, "translationX", -100f);
             animation.setDuration(1000);

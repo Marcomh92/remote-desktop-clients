@@ -204,24 +204,30 @@ The Opaque flavor uses its own `SharedPreferences`-per-connection file instead (
 
 ## 6. Layouts affecting the canvas toolbar / sidebar
 
-### 6.1 `bVNC/src/main/res/layout/canvas.xml` (147 lines)
+### 6.1 `bVNC/src/main/res/layout/canvas.xml` (180 lines)
 
 | Z-order | Element | Role |
 |---|---|---|
-| Top | `keyboardToggleButton @+id/keyboardToggleButton` | RDP-only floating button. Default `gone`; shown only when `Utils.isRdp(this)`. Cycle: `NONE → KEYBOARD → EXTRA → NONE`. Drag-vs-tap distinguished by an inline `OnTouchListener` (`RemoteCanvasActivity.onCreateOptionsMenu:1132-1168`); session-only position (no persistence). LAST child of `canvasLayout` to stay on top of the rest. **Round 5 restyle:** explicit 40 dp × 40 dp (was `wrap_content` ≈ 48 dp), 5 dp padding (was 6 dp), Material hamburger icon (`@drawable/ic_baseline_menu_48`, tint `#A0A0A0`), background `@drawable/bg_keyboard_toggle.xml` (13 dp corners, `#40000000` 25 % black; was flat `#80000000` 50 %). **Round 6 visual delta:** 40 dp → 32 dp, padding 5 dp → 4 dp; `bg_keyboard_toggle.xml` corners 13 dp → 10 dp, fill `#40000000` → `#33000000`. `canvas.xml` and `layout-large/canvas.xml` stay byte-identical at `:154-165`. |
+| Top | `toolbarToggleButton @+id/toolbarToggleButton` | **Always-visible action-bar toggle FAB** (round 7). Lives at `right|center`; the toolbar's `leftHandedModeTag` gravity is mirrored onto the FAB at activity start (`RemoteCanvasActivity.continueConnecting:477-485`), after which the FAB can be dragged independently. Drag-vs-tap `OnTouchListener` (`setupToolbarToggleButton:1783-1830`): tap toggles toolbar expand/collapse (`toggleToolbarExpansion:1839-1850`); drag persists X/Y to the legacy `USELASTPOSITIONTOOLBAR_X` / `_Y` / `_MOVED` columns via `handler.post(...)` off the UI thread (`saveToolbarTogglePosition:1928-1938`). Position re-applied on every layout pass (`restoreToolbarTogglePosition:1910-1926`, called from `offsetOrRestoreSavedToolbarPosition:702-704`); out-of-bounds positions leave the FAB at its gravity default. 32 dp × 32 dp, 8 dp padding, `@drawable/bg_keyboard_toggle.xml` background, `@drawable/ic_overflow_vertical_24.xml` icon (Material vertical 3-dot, tint `#A0A0A0`). `contentDescription=@string/show_menu`. Out-of-bounds saves are silently dropped — no DB write. The legacy `moveToolbar` drag-handle menu item is gone (the toggle FAB fills the role for the whole toolbar). |
+| ^ | `keyboardToggleButton @+id/keyboardToggleButton` | **Always-visible keyboard FAB** on every flavor (round 7). Cycle: RDP `InputAreaState` `NONE → KEYBOARD → EXTRA → NONE` via `onKeyboardToggleButtonClicked:1757-1773`; non-RDP flavors just call `showKeyboard()` / `hideKeyboard()`. Drag-vs-tap distinguished by an inline `OnTouchListener` (`RemoteCanvasActivity.onCreateOptionsMenu:1131-1174`); **session-only** position (no persistence — round-7 FAB asymmetry, see PAT-007). **Round 5 restyle:** explicit 40 dp × 40 dp (was `wrap_content` ≈ 48 dp), 5 dp padding (was 6 dp), Material hamburger icon (`@drawable/ic_baseline_menu_48`, tint `#A0A0A0`), background `@drawable/bg_keyboard_toggle.xml` (13 dp corners, `#40000000` 25 % black; was flat `#80000000` 50 %). **Round 6 visual delta:** 40 dp → 32 dp, padding 5 dp → 4 dp; `bg_keyboard_toggle.xml` corners 13 dp → 10 dp, fill `#40000000` → `#33000000`. **Round 7 behavior change:** no `android:visibility` attribute (visible by default on every flavor; `Utils.isRdp(this)` is no longer gating); the legacy `actionShowKeyboard` toolbar menu item is gone (the FAB fills the role). |
 | ^ | `singleHandOpts` overlay | `RelativeLayout` (gone by default; visible only in `TouchInputHandlerSingleHanded`). Six buttons: `singleDrag`, `singleMiddle`, `singleRight`, `singleScroll`, `singleZoom`, `singleCancel`. |
 | ^ | `extraKeysToolbar` (`ViewPager @id/extraKeysToolbar`) | Legacy bottom pager (3 pages: SendText / Sticky mods / F-keys). Suppressed on RDP (`RemoteCanvasActivity.onGlobalLayout:537-541`); kept for VNC/SPICE/Opaque. |
 | ^ | `extraKeysPageIndicator` | Dots under the pager. |
 | ^ | `keyboardIconForAndroidTv` | Animated icon for TV. Gone otherwise. |
-| ^ | `RemoteToolbar @id/toolbar` | Right-side floating action bar. Set as support action bar. ColorPrimary background. |
+| ^ | `RemoteToolbar @id/toolbar` | Right-side floating action bar. Set as support action bar (`setSupportActionBar(toolbar)` in `continueConnecting:475`). ColorPrimary background. **Default `visibility="gone"`** (round 7); shown only when the user taps `toolbarToggleButton`. At expand time the toolbar is anchored to the FAB via `positionToolbarNextToToggle:1859-1901` (preferred left of the FAB; falls back to right if no room; clamped to canvas bounds). |
 | ^ | `rdpInputAreaContainer @+id/rdpInputAreaContainer` | RDP-only `FrameLayout` at bottom-anchored, `gone` by default. Inflated at runtime with `rdp_input_area.xml` (modifier row + "123" extra-keys grid). Visibility is driven by `InputAreaState`. |
 | Bottom | `RemoteCanvas @id/canvas` | The drawing surface, fills parent. |
 
 ### 6.2 Toolbar menu (`bVNC/src/main/res/menu/canvasactivitymenu.xml`)
 
-Always-on items: `moveToolbar`, `extraKeysToggle`, `actionShowKeyboard`, `actionScrollWheel`.
+Always-on items: `extraKeysToggle`, `actionScrollWheel`.
 
 Overflow submenu items: `itemInputMode` (`itemInputTouchPanZoomMouse` / `itemInputDragPanZoomMouse` / `itemInputTouchpad` / `itemInputSingleHanded`), `itemScaling` (`itemZoomable` / `itemFitToScreen` / `itemOneToOne`), `itemDisconnect`, `itemSpecialKeys`, `itemSendKeyAgain`, `itemCtrlAltDel`, `itemEnterText`, `itemColorMode`, `itemCenterMouse`, `itemInfo`, `itemHelpInputMode`.
+
+**Round 7 menu deltas.** Two always-on items were removed:
+
+- `moveToolbar` — drag-handle for repositioning the action bar. The toolbar is no longer directly user-draggable; the `toolbarToggleButton` FAB now fills that role for the whole element (drag the FAB), and the FAB itself is draggable. The toolbar position at expand time is anchored to the FAB via `positionToolbarNextToToggle`.
+- `actionShowKeyboard` — toolbar entry point for the IME on non-RDP flavors. The keyboard FAB (`@+id/keyboardToggleButton`) is now visible on every flavor, so this menu item had no remaining user.
 
 (See `features/INPUT_PIPELINE.md` §6 for the settings/preferences that drive these items.)
 
@@ -240,7 +246,8 @@ The aRDP-specific bookmark editor layout. Top MaterialCardView (nickname, option
 | `bVNC/src/main/res/layout/canvasactivitymenu.xml` | Canvas toolbar menu |
 | `bVNC/src/main/res/layout/rdp_input_area.xml` | RDP-only modifier row + "123" extra-keys grid; inflated into `rdpInputAreaContainer`. Not present in `layout-large/rdp_input_area.xml` (single layout for all configurations). Round 5: `ModifierRowView` height 40 dp → 27 dp; the inner grid panel (`RdpExtraGridPanel`) height stays at 192 dp so its GridLayout's FILL rowSpecs distribute the parent height. |
 | `bVNC/src/main/res/drawable/bg_keyboard_toggle.xml` | Floating keyboard-toggle button shape drawable. Round 5: `<shape>` with `corners android:radius="13dp"` + `<solid android:color="#40000000" />` (25 % black). **Round 6 visual delta:** corners 13 dp → 10 dp, fill `#40000000` → `#33000000` (≈ 20 % black). |
-| `bVNC/src/main/res/layout-large/canvas.xml` | Large-screen variant of `canvas.xml` — byte-identical to the default layout. The RDP-only overlay elements (`keyboardToggleButton`, `rdpInputAreaContainer`) are declared at the same IDs in both. |
+| `bVNC/src/main/res/layout-large/canvas.xml` | Large-screen variant of `canvas.xml` — byte-identical to the default layout. Both floating buttons (`keyboardToggleButton`, `toolbarToggleButton`) and the RDP-only `rdpInputAreaContainer` are declared at the same IDs in both. |
+| `bVNC/src/main/res/drawable/ic_overflow_vertical_24.xml` | Material vertical 3-dot vector, 24 dp × 24 dp viewport, tint `#A0A0A0`. Round-7 icon for the `@+id/toolbarToggleButton` FAB (action-bar toggle). |
 
 ### 6.5 Back-press behavior (RDP-only)
 

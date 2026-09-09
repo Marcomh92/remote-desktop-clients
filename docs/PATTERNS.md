@@ -125,15 +125,23 @@ Any class that holds JNI state must not be instantiated before the static initia
 
 | Z-order | Element |
 |---|---|
-| Top of stack | `keyboardToggleButton @+id/keyboardToggleButton` (RDP-only, last child so it stays on top; default `gone`) |
+| Top of stack | `toolbarToggleButton @+id/toolbarToggleButton` (always visible on every flavor; expanded-at-tap FAB that owns the action bar) |
+| ^ | `keyboardToggleButton @+id/keyboardToggleButton` (always visible on every flavor; cycles IME on/off) |
 | ^ | `singleHandOpts` overlay (visible only in single-handed input mode) |
 | ^ | `extraKeysToolbar` ViewPager (bottom, hidden unless extra keys are on; suppressed on RDP) |
 | ^ | `keyboardIconForAndroidTv` (TV only) |
-| ^ | `RemoteToolbar` (set as support action bar; right side) |
+| ^ | `RemoteToolbar @+id/toolbar` (set as support action bar; **default `gone`**, shown only when the user taps the `toolbarToggleButton` FAB — anchored to the FAB at expand time via `positionToolbarNextToToggle`) |
 | ^ | `rdpInputAreaContainer @+id/rdpInputAreaContainer` (RDP-only, anchored to bottom; default `gone`) |
 | Bottom | `RemoteCanvas` (fills parent) |
 
 This stack order is fixed in `bVNC/src/main/res/layout/canvas.xml` (mirrored in `layout-large/canvas.xml`). Adding overlays requires editing that XML in the same order.
+
+**Toolbar / FAB asymmetry.** The two FABs are *both* always visible on every flavor but their persistence differs on purpose:
+
+- `keyboardToggleButton` — session-only position (drag persists for the activity lifetime; not written to DB). No state-gating: the FAB itself is always visible; only its click handler dispatches to the IME / RDP `InputAreaState` machine.
+- `toolbarToggleButton` — **per-connection persisted** position. `setupToolbarToggleButton` (`RemoteCanvasActivity.java:1783-1830`) wires a drag-vs-tap `OnTouchListener` (mirror of the keyboard-FAB pattern); on `ACTION_UP` after the finger exceeded `scaledTouchSlop`, `saveToolbarTogglePosition` (`:1928-1938`) writes X/Y via `handler.post(...)` so the SQLite UPDATE in `Database.runWritable` runs off the UI thread. Position is re-applied on every layout pass via `restoreToolbarTogglePosition` (`:1910-1926`, invoked from `offsetOrRestoreSavedToolbarPosition:702-704`). Saved into the legacy `USELASTPOSITIONTOOLBAR`/`_X`/`_Y`/`_MOVED` columns that the now-deleted `moveToolbar` drag handle used — users who never moved the legacy drag handle stay on the gravity default; users who did get the FAB at that position. No DB migration needed.
+
+**Toolbar visibility model.** The toolbar (`RemoteToolbar`) is no longer auto-shown or auto-hidden by touch input. `RemoteCanvasActivity.showActionBar` (`:1583-1589`) is a deliberate no-op kept so the 5 touch-input call sites (`TouchInputHandlerDirectSwipePan`, `TouchInputHandlerDirectDragPan`, `TouchInputHandlerTouchpad` ×3, `TouchInputHandlerGeneric`, `ScrollWheelButton`) continue to compile. The legacy `ActionBarHider` / `ActionBarShower` / `ActionBarPositionSaver` Runnable inner classes and the `OnTouchViewMover toolbarMover` field were deleted. Expansion is exclusively user-driven: tap the FAB. While the IME is up the FAB tap is a no-op (the keyboard owns the screen). The `RemoteToolbar` subclass in `remoteClientLib/src/main/java/com/undatech/opaque/util/RemoteToolbar.java` is now an unused wrapper around `Toolbar` (only adds `setPositionToMakeVisible`, which has no callers); left in place for backward compat.
 
 ---
 

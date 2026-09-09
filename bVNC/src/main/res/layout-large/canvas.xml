@@ -21,7 +21,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="right|center"
-        android:background="?attr/colorPrimary">
+        android:background="?attr/colorPrimary"
+        android:visibility="gone">
     </com.undatech.opaque.util.RemoteToolbar>
 
     <ImageButton
@@ -162,7 +163,18 @@
         android:clipToOutline="true"
         android:contentDescription="@string/show_keyboard"
         android:padding="8dp"
-        android:src="@drawable/ic_baseline_menu_48"
-        android:visibility="gone" />
+        android:src="@drawable/ic_baseline_menu_48" />
+
+    <ImageButton
+        android:id="@+id/toolbarToggleButton"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="right|center"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_keyboard_toggle"
+        android:clipToOutline="true"
+        android:contentDescription="@string/show_menu"
+        android:padding="8dp"
+        android:src="@drawable/ic_overflow_vertical_24" />
 
 </FrameLayout>
