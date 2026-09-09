@@ -28,6 +28,8 @@ import java.util.concurrent.Executors;
 public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper.KeyProcessingListener,
         LibFreeRDP.UIEventListener, LibFreeRDP.EventListener {
     static final String TAG = "RdpCommunicator";
+    /** Cursor callback arrival tags, filterable with `adb logcat -s TAG_cursor_recv_rdp`. */
+    static final String TAG_CURSOR_RECV_RDP = "TAG_cursor_recv_rdp";
 
     // private final static int VK_CONTROL = 0x11;
     private final static int VK_LCONTROL = 0xA2;
@@ -619,6 +621,51 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
     public void OnRemoteClipboardChanged(String data) {
         Log.d(TAG, "OnRemoteClipboardChanged called.");
         remoteClipboardChanged(data);
+    }
+
+    @Override
+    public void OnPointerEventNew(byte[] andMask, byte[] xorMask, int width, int height,
+                                  int xorBpp, int lengthAndMask, int lengthXorMask,
+                                  int hotspotX, int hotspotY) {
+        Log.d(TAG, "OnPointerEventNew: " + width + "x" + height + " xorBpp=" + xorBpp
+                + " hotspot=(" + hotspotX + "," + hotspotY + ")");
+        Log.i(TAG_CURSOR_RECV_RDP, "OnPointerEventNew " + width + "x" + height
+                + " xorBpp=" + xorBpp + " hotspot=(" + hotspotX + "," + hotspotY + ")"
+                + " andLen=" + lengthAndMask + " xorLen=" + lengthXorMask);
+        viewable.OnPointerEventNew(andMask, xorMask, width, height, xorBpp,
+                                   lengthAndMask, lengthXorMask, hotspotX, hotspotY);
+    }
+
+    @Override
+    public void OnPointerEventSet(byte[] andMask, byte[] xorMask, int width, int height,
+                                  int xorBpp, int lengthAndMask, int lengthXorMask,
+                                  int hotspotX, int hotspotY) {
+        Log.d(TAG, "OnPointerEventSet: " + width + "x" + height + " xorBpp=" + xorBpp
+                + " hotspot=(" + hotspotX + "," + hotspotY + ")");
+        Log.i(TAG_CURSOR_RECV_RDP, "OnPointerEventSet " + width + "x" + height
+                + " xorBpp=" + xorBpp + " hotspot=(" + hotspotX + "," + hotspotY + ")");
+        viewable.OnPointerEventSet(andMask, xorMask, width, height, xorBpp,
+                                   lengthAndMask, lengthXorMask, hotspotX, hotspotY);
+    }
+
+    @Override
+    public void OnPointerEventSetPosition(int x, int y) {
+        Log.i(TAG_CURSOR_RECV_RDP, "OnPointerEventSetPosition (" + x + "," + y + ")");
+        viewable.OnPointerEventSetPosition(x, y);
+    }
+
+    @Override
+    public void OnPointerEventHide() {
+        Log.d(TAG, "OnPointerEventHide");
+        Log.i(TAG_CURSOR_RECV_RDP, "OnPointerEventHide");
+        viewable.OnPointerEventHide();
+    }
+
+    @Override
+    public void OnPointerEventDefault() {
+        Log.d(TAG, "OnPointerEventDefault");
+        Log.i(TAG_CURSOR_RECV_RDP, "OnPointerEventDefault");
+        viewable.OnPointerEventDefault();
     }
 
     public static class DisconnectThread extends Thread {

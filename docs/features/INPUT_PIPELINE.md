@@ -60,7 +60,7 @@
 | Class | `RemoteCanvas extends AppCompatImageView implements Viewable` | `bVNC/src/main/java/com/iiordanov/bVNC/RemoteCanvas.java:62` |
 | Framebuffer | Single `Bitmap` swapped via `setImageDrawable` | `RemoteCanvas.java:73` (`myDrawable`), `RemoteCanvas.reallocateMyDrawable:331-354` |
 | Framebuffer impl | `UltraCompactBitmapData` (`!isVnc` always, for RDP) | `RemoteCanvas.java:359-366` (`isRdpSpiceOrOpaque` branch) |
-| Soft cursor | Local `Bitmap` blit drawn on top of framebuffer | `RemoteCanvas.softCursorMove:754-770` |
+| Soft cursor | Local `Bitmap` blit drawn on top of framebuffer — for VNC it carries the server's `XCursor`/`RichCursor` pixels; for SPICE/Opaque it is the static `R.drawable.cursor` PNG (host-cursor callback is a TODO stub in `android-spice-widget.c:314-319`); for RDP under `CURSOR_AUTO` it is populated by `RemoteCanvas.OnPointerEvent{New,Set}` after the host forwards the AND/XOR-mask bitmap from FreeRDP (see `remoteClientLib/jni/libs/22_freerdp_add_cursor_callback.patch`); overlay layering means the user's view is always: framebuffer pixels, then the host cursor shape on top. | `RemoteCanvas.softCursorMove:782-806`, `RemoteCanvas.needsLocalCursor:374-395`, `RemoteCanvas.OnPointerEventNew:864-869`, `RemoteCanvas.hostCursorFromRdp:930-999` |
 | Repaint rate | ≤60 Hz ahead; ≤10 Hz when behind | `RemoteCanvas.reDraw:681-696`, `invalidateCanvasRunnable:153` |
 | Layout | `canvas.xml` in `bVNC/src/main/res/layout/` | lines 1-147 |
 

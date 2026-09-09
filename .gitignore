@@ -14,6 +14,8 @@ remoteClientLib/jni/libs/tar/
 remoteClientLib/jni/libs/CERBERO_BUILT_*
 remoteClientLib/jni/libs/FREERDP_BUILT
 remoteClientLib/jni/libs/android-ndk*
+# install_ndk sometimes drops the NDK at this level when called from the wrong cwd
+remoteClientLib/android-ndk-*
 remoteClientLib/jni/libs/cmake-*
 remoteClientLib/jni/libs/setuptools
 remoteClientLib/libs

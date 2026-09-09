@@ -46,6 +46,8 @@ import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 
+import java.lang.reflect.Method;
+
 import androidx.appcompat.widget.AppCompatImageView;
 
 import com.google.android.material.snackbar.Snackbar;
@@ -60,6 +62,15 @@ import com.undatech.opaque.input.RemotePointer;
 import com.undatech.remoteClientUi.R;
 
 public class RemoteCanvas extends AppCompatImageView implements Viewable {
+    // Diagnostic tags. Use `adb logcat -s TAG_*` to see only cursor-related logs.
+    // Each is a separate component on the cursor pipeline so missing entries
+    // pinpoint which link is broken (recv -> gate -> decode -> draw).
+    private static final String TAG_CURSOR_RECV   = "TAG_cursor_recv";   // OnPointerEvent entries from RdpCommunicator
+    private static final String TAG_CURSOR_GATE   = "TAG_cursor_gate";   // shouldIgnoreHostCursor + softCursorMove
+    private static final String TAG_CURSOR_DECODE = "TAG_cursor_decode"; // hostCursorFromRdp
+    private static final String TAG_CURSOR_DRAW   = "TAG_cursor_draw";   // setSoftCursor/setCursorRect + hideHostCursor
+    private static final String TAG_CURSOR_PROBE  = "TAG_cursor_probe";  // one-shot lib patch detection
+    private static boolean cursorProbeOnce = false;
     private final static String TAG = "RemoteCanvas";
     // BUG-002 enhancement: cursor edge threshold in dp. The viewport starts
     // panning when the cursor is within this many dp of the visible-area
@@ -129,11 +140,6 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
     boolean isVnc;
 
     /*
-     * This flag indicates whether this is the RDP client.
-     */
-    boolean isRdp;
-
-    /*
      * This flag indicates whether this is the SPICE client.
      */
     boolean isSpice;
@@ -194,9 +200,17 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
         super(context, attrs);
 
         isVnc = Utils.isVnc(getContext());
-        isRdp = Utils.isRdp(getContext());
         isSpice = Utils.isSpice(getContext());
         isOpaque = Utils.isOpaque(getContext());
+
+        // One-shot: probe the loaded FreeRDP Java classes for patch 22's
+        // new UIEventListener methods. After about 5s of being connected,
+        // the absence of `TAG_cursor_recv: OnPointerEventNew entered` is
+        // the smoking gun: the C side drops the bitmap before Java.
+        if (!cursorProbeOnce) {
+            cursorProbeOnce = true;
+            probePatch22();
+        }
 
         final Display display = ((Activity) context).getWindow().getWindowManager().getDefaultDisplay();
         displayWidth = display.getWidth();
@@ -204,6 +218,39 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
         DisplayMetrics metrics = new DisplayMetrics();
         display.getMetrics(metrics);
         displayDensity = metrics.density;
+    }
+
+    /**
+     * Reflectively checks whether the FreeRDP vendor Java wrapper class
+     * (the one that receives C calls via the patched
+     * {@code android_Pointer_*} callbacks) has the new
+     * {@code OnPointerEvent*} methods. Patch 22 makes them
+     * {@code default}; without the patch the interface lacks them entirely.
+     */
+    private void probePatch22() {
+        String versionInfo = "unknown";
+        try {
+            versionInfo = (String) Class.forName("com.freerdp.freerdpcore.services.LibFreeRDP")
+                    .getMethod("getVersion").invoke(null);
+        } catch (Throwable t) {
+            Log.i(TAG_CURSOR_PROBE, "LibFreeRDP.getVersion() failed: " + t);
+        }
+        Log.i(TAG_CURSOR_PROBE, "LibFreeRDP.getVersion() -> " + versionInfo);
+        try {
+            Class<?> uiEventListenerClass = Class.forName(
+                    "com.freerdp.freerdpcore.services.LibFreeRDP$UIEventListener");
+            int foundDefault = 0;
+            for (Method m : uiEventListenerClass.getDeclaredMethods()) {
+                if (m.getName().startsWith("OnPointerEvent") && m.isDefault()) {
+                    foundDefault++;
+                }
+            }
+            Log.i(TAG_CURSOR_PROBE,
+                    "UIEventListener.OnPointerEvent* default methods: " + foundDefault
+                    + "  (patch 22 expected: 5; vanilla FreeRDP 2.11.7 expected: 0)");
+        } catch (Throwable t) {
+            Log.i(TAG_CURSOR_PROBE, "UIEventListener introspection failed: " + t);
+        }
     }
 
     public void setParameters(
@@ -367,16 +414,40 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
         }
     }
 
-    /**
-     * Determines if the app should show a local cursor or not
+/**
+     * Determines if the app should show a local cursor or not.
+     *
+     * <p>This only governs the initial {@code reallocateDrawable()} seed.
+     * Cursor updates that arrive later (VNC decoder push, RDP host bitmap
+     * via OnPointerEventNew/Set) replace this seed on the softCursor
+     * layer regardless of what this returns.</p>
+     *
+     * <p>AUTO behavior:
+     * <ul>
+     * <li><b>SPICE/Opaque</b> still seed the local PNG because their
+     *     host-cursor callback is an un-implemented TODO stub at
+     *     {@code remoteClientLib/src/main/cpp/android/android-spice-widget.c:314-319}.
+     *     The server cursor never reaches Java on those protocols.</li>
+     * <li><b>RDP</b> does not seed - the softCursor is filled by
+     *     OnPointerEventNew/Set, which fire because of patch
+     *     {@code 22_freerdp_add_cursor_callback.patch}.</li>
+     * <li><b>VNC</b> does not seed here either - VNC's server-cursor path
+     *     goes through {@code Decoder.handleCursorShapeUpdate} which sets
+     *     the softCursor directly; if the VNC server never sends a cursor
+     *     we rely on the lazy-init inside {@link #softCursorMove}.</li>
+     * </ul></p>
+     *
+     * <p>FORCE_LOCAL and FORCE_DISABLE preserve their original meanings on
+     * all flavors.</p>
      */
     private boolean needsLocalCursor() {
-        boolean isRdpSpiceOrOpaque = isRdp || isSpice || isOpaque;
-        boolean localCursorNotForceDisabled =
-                connection.getUseLocalCursor() != Constants.CURSOR_FORCE_DISABLE;
-        boolean localCursorForceEnabled =
-                connection.getUseLocalCursor() == Constants.CURSOR_FORCE_LOCAL;
-        return (isRdpSpiceOrOpaque && localCursorNotForceDisabled) || localCursorForceEnabled;
+        int mode = connection.getUseLocalCursor();
+        if (mode == Constants.CURSOR_FORCE_LOCAL) return true;
+        if (mode == Constants.CURSOR_FORCE_DISABLE) return false;
+        // CURSOR_AUTO: only seed for protocols that never receive a
+        // host bitmap. RDP relies on OnPointerEvent{New,Set} for that
+        // bitmap; VNC uses the decoder path; SPICE/Opaque have no path.
+        return isSpice || isOpaque;
     }
 
     @Override
@@ -779,7 +850,21 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
      * Moves soft cursor into a particular location.
      */
     synchronized public void softCursorMove(int x, int y) {
-        if (isNotInitSoftCursor() && connection.getUseLocalCursor() != Constants.CURSOR_FORCE_DISABLE) {
+        Log.i(TAG_CURSOR_GATE, "softCursorMove (" + x + "," + y + ")"
+                + " initialized=" + !isNotInitSoftCursor()
+                + " mode=" + (connection != null ? connection.getUseLocalCursor() : -1)
+                + " isCursorBeingMoved=" + isCursorBeingMoved()
+                + " relative=" + pointer.isRelativeEvents());
+        // Lazy-init only on protocols that have no other cursor source:
+        //   - VNC: server cursor is fed by Decoder.handleCursorShapeUpdate;
+        //     lazy-init ensures something visible if the server never sends one.
+        //   - SPICE/Opaque: TODO stub at android-spice-widget.c:314-319.
+        // RDP under CURSOR_AUTO never lazily-inits here because the cursor
+        // bitmap arrives via OnPointerEventNew/Set from the patched
+        // android_register_pointer in FreeRDP client/Android.
+        if (isNotInitSoftCursor() && connection.getUseLocalCursor() != Constants.CURSOR_FORCE_DISABLE
+            && (isVnc || isSpice || isOpaque)) {
+            Log.i(TAG_CURSOR_GATE, "softCursorMove: lazy-init local softCursor PNG");
             initializeSoftCursor();
         }
 
@@ -837,12 +922,238 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
     }
 
     private void setSoftCursorRectAndPixels(int w, int h, int[] tempPixels) {
+        setSoftCursorRectAndPixels(w, h, 0, 0, tempPixels);
+    }
+
+    private void setSoftCursorRectAndPixels(int w, int h, int hotX, int hotY, int[] tempPixels) {
         synchronized (this) {
             if (myDrawable != null) {
-                myDrawable.setCursorRect(pointer.getX(), pointer.getY(), w, h, 0, 0);
+                myDrawable.setCursorRect(pointer.getX(), pointer.getY(), w, h, hotX, hotY);
                 // Set softCursor to whatever the resource is.
                 myDrawable.setSoftCursor(tempPixels);
+                Log.i(TAG_CURSOR_DRAW, "setCursorRect(" + pointer.getX() + "," + pointer.getY()
+                        + " " + w + "x" + h + " hot=" + hotX + "," + hotY + ")"
+                        + " + setSoftCursor(" + tempPixels.length + " px)");
+            } else {
+                Log.w(TAG_CURSOR_DRAW, "setSoftCursorRectAndPixels myDrawable==null "
+                        + w + "x" + h + " hot=" + hotX + "," + hotY);
             }
+        }
+    }
+
+    // The following four overrides receive the host cursor from FreeRDP via
+    // RdpCommunicator. Without the corresponding patch
+    // remoteClientLib/jni/libs/22_freerdp_add_cursor_callback.patch the
+    // stub C-side callbacks in libfreerdp/cache/pointer.c would drop
+    // the cursor bitmap and these would never fire.
+
+    @Override
+    public void OnPointerEventNew(byte[] andMask, byte[] xorMask, int width, int height,
+                                  int xorBpp, int lengthAndMask, int lengthXorMask,
+                                  int hotspotX, int hotspotY) {
+        Log.i(TAG_CURSOR_RECV, "OnPointerEventNew entered " + width + "x" + height
+                + " xorBpp=" + xorBpp + " hotspot=(" + hotspotX + "," + hotspotY + ")"
+                + " andLen=" + lengthAndMask + " xorLen=" + lengthXorMask
+                + " andArr=" + (andMask != null ? andMask.length : "null")
+                + " xorArr=" + (xorMask != null ? xorMask.length : "null"));
+        if (shouldIgnoreHostCursor()) return;
+        hostCursorFromRdp(andMask, xorMask, width, height, xorBpp, hotspotX, hotspotY);
+    }
+
+    @Override
+    public void OnPointerEventSet(byte[] andMask, byte[] xorMask, int width, int height,
+                                  int xorBpp, int lengthAndMask, int lengthXorMask,
+                                  int hotspotX, int hotspotY) {
+        Log.i(TAG_CURSOR_RECV, "OnPointerEventSet entered " + width + "x" + height
+                + " xorBpp=" + xorBpp + " hotspot=(" + hotspotX + "," + hotspotY + ")");
+        // No cursor-cache lookup on the Java side; FreeRDP's C-side cache
+        // owns the bitmap memory and re-fires with full payload on every
+        // activation, so the same decoder path works for both New and Set.
+        OnPointerEventNew(andMask, xorMask, width, height, xorBpp,
+                          lengthAndMask, lengthXorMask, hotspotX, hotspotY);
+    }
+
+    @Override
+    public void OnPointerEventSetPosition(int x, int y) {
+        Log.i(TAG_CURSOR_RECV, "OnPointerEventSetPosition (" + x + "," + y + ")");
+        if (shouldIgnoreHostCursor()) return;
+        softCursorMove(x, y);
+    }
+
+    @Override
+    public void OnPointerEventHide() {
+        Log.i(TAG_CURSOR_RECV, "OnPointerEventHide");
+        if (shouldIgnoreHostCursor()) return;
+        hideHostCursor();
+    }
+
+    @Override
+    public void OnPointerEventDefault() {
+        Log.i(TAG_CURSOR_RECV, "OnPointerEventDefault");
+        if (shouldIgnoreHostCursor()) return;
+        hideHostCursor();
+    }
+
+    /**
+     * Determines whether host-driven cursor updates from RDP should be
+     * applied at all. Active only on RDP (VNC has its own
+     * Decoder.handleCursorShapeUpdate path, SPICE/Opaque leave the cursor
+     * to the local PNG). Disabled by CURSOR_FORCE_DISABLE; ignored
+     * (replaced by local PNG) under CURSOR_FORCE_LOCAL.
+     */
+    private boolean shouldIgnoreHostCursor() {
+        int mode = connection.getUseLocalCursor();
+        boolean ignore;
+        if (mode == Constants.CURSOR_FORCE_DISABLE) ignore = true;
+        else if (isVnc) ignore = true;
+        else if (isSpice || isOpaque) ignore = true;
+        else ignore = false;
+        Log.i(TAG_CURSOR_GATE, "shouldIgnoreHostCursor mode=" + mode
+                + " isVnc=" + isVnc + " isSpice=" + isSpice + " isOpaque=" + isOpaque
+                + " -> " + ignore);
+        return ignore;
+    }
+
+    /**
+     * Decodes the AND/XOR mask pair from FreeRDP into an Android ARGB_8888
+     * int[] suitable for {@code AbstractBitmapDrawable.setSoftCursor}.
+     *
+     * <p>The RDP protocol transmits cursor bitmaps as two MSB-first packed
+     * monochrome planes:
+     * <ul>
+     * <li>{@code andMask} 1bpp:  {@code 1} = transparent, {@code 0} =
+     *     render the XOR-pixel at this position.</li>
+     * <li>{@code xorMask} depth depends on {@code xorBpp} (1, 4, 8, 16,
+     *     24, 32).</li>
+     * </ul>
+     * Higher-depth XOR masks are stored bottom-up, BGRA for 24/32bpp. For
+     * sub-32bpp shapes we fall back to a black/white interpretation which
+     * matches what newer FreeRDP clients do for legacy 1bpp cursors.
+     */
+    private void hostCursorFromRdp(byte[] andMask, byte[] xorMask, int width, int height,
+                                   int xorBpp, int hotspotX, int hotspotY) {
+        Log.i(TAG_CURSOR_DECODE, "hostCursorFromRdp " + width + "x" + height
+                + " xorBpp=" + xorBpp + " hotspot=(" + hotspotX + "," + hotspotY + ")"
+                + " andLen=" + (andMask != null ? andMask.length : -1)
+                + " xorLen=" + (xorMask != null ? xorMask.length : -1));
+        if (width <= 0 || height <= 0) {
+            Log.w(TAG_CURSOR_DECODE, "non-positive dimensions, ignoring");
+            return;
+        }
+        if (xorMask == null && andMask == null) {
+            Log.w(TAG_CURSOR_DECODE, "null masks, ignoring");
+            return;
+        }
+        int[] pixels = new int[width * height];
+        // MS-RDPBCGR §2.2.9.1.1.4: AND/XOR masks are stored bottom-up in the
+        // wire cache. Compute sy = height - 1 - y for the mask offset when
+        // writing into `pixels`, then `y` itself indexes pixels top-down.
+        // AND-mask scanlines are 2-byte aligned on the wire (stride =
+        // (((width+7)/8) + 1) & ~1), not (width+7)/8; widths 16/32 happen
+        // to fit, widths 24+ misread otherwise. XOR-mask rows are tight
+        // packed per xorBpp for 32bpp and similar (we expand to ARGB below).
+        int andStride = (((width + 7) / 8) + 1) & ~1;
+
+        if (xorBpp == 32) {
+            for (int y = 0; y < height; y++) {
+                int sy = height - 1 - y;
+                int xorRowOff = sy * width * 4;
+                for (int x = 0; x < width; x++) {
+                    int idx = y * width + x;
+                    int xorOff = xorRowOff + x * 4;
+                    if (xorMask == null || xorOff + 3 >= xorMask.length) {
+                        pixels[idx] = 0; /* not enough data */
+                        continue;
+                    }
+                    int b = xorMask[xorOff] & 0xff;
+                    int g = xorMask[xorOff + 1] & 0xff;
+                    int r = xorMask[xorOff + 2] & 0xff;
+                    int a = xorMask[xorOff + 3] & 0xff;
+                    pixels[idx] = (a << 24) | (r << 16) | (g << 8) | b;
+                    if (andBit(andMask, x, sy, andStride) != 0) {
+                        pixels[idx] = 0;
+                    }
+                }
+            }
+        } else if (xorBpp == 24) {
+            for (int y = 0; y < height; y++) {
+                int sy = height - 1 - y;
+                int xorRowOff = sy * width * 3;
+                for (int x = 0; x < width; x++) {
+                    int idx = y * width + x;
+                    int xorOff = xorRowOff + x * 3;
+                    if (xorMask == null || xorOff + 2 >= xorMask.length) {
+                        pixels[idx] = 0;
+                        continue;
+                    }
+                    int b = xorMask[xorOff] & 0xff;
+                    int g = xorMask[xorOff + 1] & 0xff;
+                    int r = xorMask[xorOff + 2] & 0xff;
+                    pixels[idx] = 0xff000000 | (r << 16) | (g << 8) | b;
+                    if (andBit(andMask, x, sy, andStride) != 0) {
+                        pixels[idx] = 0;
+                    }
+                }
+            }
+        } else {
+            /* Legacy monochrome cursors (xorBpp in {1, 4, 8, 16}). Render
+             * XOR=1 as opaque white, XOR=0 as opaque black, AND=1 as
+             * transparent. This matches what a typical Windows RDP server
+             * sends for the resize, hand, I-beam, etc. */
+            int xorStride = (width + 7) / 8;
+            for (int y = 0; y < height; y++) {
+                int sy = height - 1 - y;
+                for (int x = 0; x < width; x++) {
+                    int idx = y * width + x;
+                    if (andBit(andMask, x, sy, andStride) != 0) {
+                        pixels[idx] = 0; /* transparent */
+                    } else if (xorBit(xorMask, x, sy, xorStride) != 0) {
+                        pixels[idx] = 0xffffffff; /* white */
+                    } else {
+                        pixels[idx] = 0xff000000; /* black */
+                    }
+                }
+            }
+        }
+        setSoftCursorRectAndPixels(width, height, hotspotX, hotspotY, pixels);
+        // Force a redraw of the cursor region: on a static framebuffer (the
+        // user's exact complaint: hover over a window edge with no other
+        // animated pixels nearby) the new bitmap would otherwise sit there
+        // invisible until the next framebuffer update triggers a draw.
+        reDraw(0, 0, getWidth(), getHeight());
+    }
+
+    private static int andBit(byte[] mask, int x, int y, int byteStride) {
+        if (mask == null) return 0;
+        int off = y * byteStride + (x / 8);
+        if (off < 0 || off >= mask.length) return 0;
+        return (mask[off] >> (7 - (x % 8))) & 1;
+    }
+
+    private static int xorBit(byte[] mask, int x, int y, int byteStride) {
+        if (mask == null) return 0;
+        int off = y * byteStride + (x / 8);
+        if (off < 0 || off >= mask.length) return 0;
+        return (mask[off] >> (7 - (x % 8))) & 1;
+    }
+
+    /**
+     * Removes the softCursor overlay by replacing it with a single
+     * transparent pixel and shrinking the cursor rect off-screen so
+     * subsequent framebuffer redraws leave no cursor artifact.
+     */
+    private void hideHostCursor() {
+        synchronized (this) {
+            if (myDrawable == null) {
+                Log.w(TAG_CURSOR_DRAW, "hideHostCursor myDrawable==null");
+                return;
+            }
+            Log.i(TAG_CURSOR_DRAW, "hideHostCursor called");
+            // 1x1 transparent: draw path (CompactBitmapData:209 etc.)
+            // already treats softCursor==null as no overlay.
+            myDrawable.setCursorRect(0, 0, 1, 1, 0, 0);
+            myDrawable.setSoftCursor(new int[]{0});
+            reDraw(0, 0, getWidth(), getHeight());
         }
     }
 

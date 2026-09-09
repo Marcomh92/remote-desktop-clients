@@ -169,6 +169,73 @@ public interface Viewable {
     void softCursorMove(int updateRectX, int updateRectY);
 
     /**
+     * Receives a newly-arrived host cursor bitmap for the local softCursor
+     * layer. Forwarded from the FreeRDP Android client after
+     * {@code freerdp/pointer.c:update_pointer_color/large/new} hands a fresh
+     * rdpPointer* to the application's pointer.New callback.
+     *
+     * <p>Bytes in {@code andMask} are packed MSB-first with the convention
+     * RDP uses for monochrome cursors: a {@code 1} bit means "transparent,
+     * do not draw this pixel", a {@code 0} bit means "render the XOR-pixel
+     * at this position". {@code xorBpp} reports the XOR-pixel depth (1 for
+     * a legacy mono cursor, 32 for a high-color cursor); the decoder in
+     * {@code RemoteCanvas} handles the most common shapes and falls back
+     * to a black/white interpretation for the others.</p>
+     *
+     * @param andMask   1bpp packed transparency mask (may be null/empty)
+     * @param xorMask   cursor color bitmap, Bpp=width*height*xorBpp/8 bytes
+     * @param width     cursor width in pixels
+     * @param height    cursor height in pixels
+     * @param xorBpp    per-pixel depth of xorMask (1/4/8/16/24/32)
+     * @param lengthAndMask length of andMask in bytes
+     * @param lengthXorMask length of xorMask in bytes
+     * @param hotspotX  X offset of the click point within the bitmap
+     *                  (rdpPointer->xPos). Standard Windows cursors have
+     *                  centered hotspots; without this anchor a resize
+     *                  edge / I-beam / hand-grab cursor sits one bitmap
+     *                  width off from where clicks land.
+     * @param hotspotY  Y offset of the click point within the bitmap
+     *                  (rdpPointer->yPos).
+     */
+    void OnPointerEventNew(byte[] andMask, byte[] xorMask, int width, int height,
+                           int xorBpp, int lengthAndMask, int lengthXorMask,
+                           int hotspotX, int hotspotY);
+
+    /**
+     * Same as {@link #OnPointerEventNew} but called when the server
+     * activates a previously cached entry. Bitmap data is still valid on
+     * the cached rdpPointer, so we resend the same payload and the Java
+     * side can use it without an opaque cache lookup of its own.
+     */
+    void OnPointerEventSet(byte[] andMask, byte[] xorMask, int width, int height,
+                           int xorBpp, int lengthAndMask, int lengthXorMask,
+                           int hotspotX, int hotspotY);
+
+    /**
+     * Receives a host-driven cursor position update for protocols where
+     * position is reported separately from cursor shape (RDP PathPosition,
+     * such as cursor trails or animated cursors).
+     *
+     * @param x absolute X position on the remote desktop in pixels
+     * @param y absolute Y position on the remote desktop in pixels
+     */
+    void OnPointerEventSetPosition(int x, int y);
+
+    /**
+     * Server asks that the local cursor be hidden. Implementation should
+     * clear or shrink the softCursor overlay until {@link #OnPointerEventNew}
+     * or {@link #OnPointerEventSet} fires again.
+     */
+    void OnPointerEventHide();
+
+    /**
+     * Server asks that the local cursor be restored to the OS default.
+     * For our purposes this is the same as {@link #OnPointerEventHide}
+     * because {@link #OnPointerEventNew} will redraw the next real cursor.
+     */
+    void OnPointerEventDefault();
+
+    /**
      * Displays a short toast message on screen.
      * @param message the message to display
      */

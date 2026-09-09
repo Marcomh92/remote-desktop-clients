@@ -1,0 +1,401 @@
+From: aRDP <arap@local>
+
+Subject: [PATCH] FreeRDP Android: forward pointer callbacks to Java so the host cursor bitmap reaches the local softCursor
+
+At FreeRDP 2.11.7, the Android client registers six stub rdpPointer
+callbacks in client/Android/android_freerdp.c:
+
+    android_Pointer_New          -> returns TRUE without reading pointer->*
+    android_Pointer_Free         -> no-op
+    android_Pointer_Set          -> no-op
+    android_Pointer_SetPosition  -> no-op
+    android_Pointer_SetNull      -> no-op
+    android_Pointer_SetDefault   -> no-op
+
+Two separate obstacles prevent the host cursor bitmap from
+reaching the Java softCursor overlay:
+
+1. libfreerdp/gdi/gdi.c::gdi_init_ex() deliberately omits
+   pointer_cache_register_callbacks() from its setup, so the
+   wire decoders for PointerColor/PointerLarge/PointerNew/
+   PointerCached stay NULL. Every pointer PDU from the server
+   is dropped at update_recv_pointer() before reaching the
+   Android stubs. This patch installs them in android_post_connect
+   next to android_register_pointer().
+
+2. The Android stubs that DO get installed never reach Java -
+   they return TRUE/FALSE without writing through to JNI.
+
+This patch:
+
+(a) Calls pointer_cache_register_callbacks(update) in
+    android_post_connect so the wire decoders become live.
+
+(b) Rewrites android_Pointer_New/Set/SetPosition/SetNull/
+    SetDefault so they forward the host pointer state to the
+    existing static-method dispatcher in LibFreeRDP.java via
+    the existing freerdp_callback(...) helper that
+    java_callback_void already wraps with thread attach/detach
+    and signature-based method lookup:
+
+    Pointer_New(rdp, ptr)
+                     -> OnPointerEventNew(rdp, andMask, xorMask,
+                                         width, height, xorBpp,
+                                         lengthAndMask,
+                                         lengthXorMask,
+                                         hotspotX, hotspotY)
+    Pointer_Set(rdp, ptr)
+                     -> OnPointerEventSet(rdp, andMask, xorMask,
+                                         width, height, xorBpp,
+                                         lengthAndMask,
+                                         lengthXorMask,
+                                         hotspotX, hotspotY)
+    Pointer_SetPosition(rdp, x, y)
+                     -> OnPointerEventSetPosition(rdp, x, y)
+    Pointer_SetNull(rdp)
+                     -> OnPointerEventHide(rdp)
+    Pointer_SetDefault(rdp)
+                     -> OnPointerEventDefault(rdp)
+
+(c) Forwards hotspotX/hotspotY (rdpPointer->xPos, ->yPos) so
+    standard Windows cursors with centered hotspots (resize
+    edges, I-beam, hand-grab, link) anchor at the correct click
+    point rather than top-left. Default arrows happen to have
+    top-left hotspots and look correct, but every other cursor
+    type looks misaligned without this.
+
+For Pointer_New and Pointer_Set the AND/XOR mask bitmaps are
+marshalled into jbyteArrays using JNI's NewByteArray /
+SetByteArrayRegion so the Java side can decode the host cursor
+into an Android ARGB_8888 Bitmap. The non-bitmap callbacks ship
+only primitives, which go through the standard
+variadic-formatted freerdp_callback("OnPointerEventXxx",
+"(JJJ...)V", ...) route.
+
+Pointer_New and Pointer_Set always return TRUE regardless of any
+JNI hiccup; returning FALSE skips pointer_cache_put() in the
+caller, which would silently break every future PointerCached
+update against that cache index.
+
+The patch number (22) was chosen because the existing patch catalog
+ends at 21_freerdp_add_timeout_on_determining_h264_support_to_avoid_anr.patch.
+The build-deps.sh apply loop at line 563 of build-deps.sh globs
+*_freerdp_*.patch so 22 is picked up automatically.
+
+The five new UIEventListener methods are declared `default` (Java 8)
+with empty bodies. FreeRDP's own SessionActivity implements
+UIEventListener and is not part of this patch; without `default`
+it would fail to compile against the new abstract methods. Only
+remoteClientLib's RdpCommunicator overrides them with the
+bitmap/position forwarder. Java 8 default methods are supported
+because freeRDPCore compiles with source/target 1.8.
+---
+ client/Android/android_freerdp.c                                                          | 145
+ client/Android/Studio/freeRDPCore/src/main/java/com/freerdp/freerdpcore/services/LibFreeRDP.java | 74
+ 2 files changed, 219 insertions(+), 15 deletions(-)
+
+--- a/client/Android/android_freerdp.c
++++ b/client/Android/android_freerdp.c
+@@ -29,6 +29,13 @@
+ #include <freerdp/codec/rfx.h>
+ #include <freerdp/gdi/gdi.h>
+ #include <freerdp/gdi/gfx.h>
++/* pointer_cache_register_callbacks installs the wire decoders for
++   PointerColor/PointerLarge/PointerNew/PointerCached that
++   gdi_init() deliberately leaves NULL in 2.11.7. Without it, the
++   android_Pointer_New/Set stubs installed by android_register_pointer
++   are unreachable because the wire decoder drops every pointer PDU
++   at update_recv_pointer before they get a chance to fire. */
++#include <freerdp/cache/pointer.h>
+ #include <freerdp/client/rdpei.h>
+ #include <freerdp/client/rdpgfx.h>
+ #include <freerdp/client/cliprdr.h>
+@@ -241,49 +248,165 @@
+ 	return TRUE;
+ }
+ 
++/*
++ * The RDP wire format sends cursor bitmaps as two monochrome planes,
++ * packed bit-by-bit (MSB first). The cached rdpPointer holds a deep
++ * copy of those bytes (andMaskData, xorMaskData) for as long as the
++ * cache entry lives, so it is safe to hand them to the JVM without
++ * copying here. lengthAndMask / lengthXorMask are in bytes; the Java
++ * decoder unpacks them using the same MSB-first convention.
++ */
++static BOOL android_Pointer_MarshalBitmaps(JNIEnv* env, jlong inst,
++                                           const char* callback,
++                                           const rdpPointer* pointer)
++{
++	if (!env || !pointer)
++		return FALSE;
++
++	jbyteArray andArr = NULL;
++	jbyteArray xorArr = NULL;
++
++	if (pointer->andMaskData && pointer->lengthAndMask > 0)
++	{
++		andArr = (*env)->NewByteArray(env, (jsize)pointer->lengthAndMask);
++		if (andArr)
++		{
++			(*env)->SetByteArrayRegion(env, andArr, 0,
++			                           (jsize)pointer->lengthAndMask,
++			                           (const jbyte*)pointer->andMaskData);
++			if ((*env)->ExceptionCheck(env))
++				return FALSE;
++		}
++	}
++
++	if (pointer->xorMaskData && pointer->lengthXorMask > 0)
++	{
++		xorArr = (*env)->NewByteArray(env, (jsize)pointer->lengthXorMask);
++		if (xorArr)
++		{
++			(*env)->SetByteArrayRegion(env, xorArr, 0,
++			                           (jsize)pointer->lengthXorMask,
++			                           (const jbyte*)pointer->xorMaskData);
++			if ((*env)->ExceptionCheck(env))
++				return FALSE;
++		}
++	}
++
++	/* Pointer_New/Set forwards: cursor bitmap + dimensions + hotspot
++	   offset. The descriptor "(J[B[BIIIIIII)V" matches the Java
++	   static dispatcher in LibFreeRDP.OnPointerEventNew/Set; the
++	   final two ints are hotspotX/hotspotY so the Java side can
++	   anchor the softCursor bitmap correctly for centered cursors
++	   (resize edges, I-beam, hand-grab). Without them, every cursor
++	   would be drawn with its top-left at the actual click point,
++	   which visibly offsets standard Windows cursors by half their
++	   bitmap extent. */
++	freerdp_callback(callback, "(J[B[BIIIIIII)V", inst, andArr, xorArr,
++	                 (jint)(pointer->width & 0xffff),
++	                 (jint)(pointer->height & 0xffff),
++	                 (jint)(pointer->xorBpp & 0xffff),
++	                 (jint)pointer->lengthAndMask,
++	                 (jint)pointer->lengthXorMask,
++	                 (jint)(pointer->xPos & 0xffff),
++	                 (jint)(pointer->yPos & 0xffff));
++
++	if (andArr)
++		(*env)->DeleteLocalRef(env, andArr);
++	if (xorArr)
++		(*env)->DeleteLocalRef(env, xorArr);
++	return TRUE;
++}
++
++/*
++ * Pointer_New fires for every new cursor entry added to the cache.
++ * The Android client has no opaque cache lookup of its own, so we
++ * treat each New event as a fresh cursor push.
++ */
+ static BOOL android_Pointer_New(rdpContext* context, rdpPointer* pointer)
+ {
+-	if (!context || !pointer || !context->gdi)
+-		return FALSE;
+-
++	if (!context || !context->instance || !pointer)
++		return FALSE;
++
++	JNIEnv* env = NULL;
++	jboolean attached = jni_attach_thread(&env);
++	if (!env)
++	{
++		if (attached == JNI_TRUE)
++			jni_detach_thread();
++		return FALSE;
++	}
++
++	/* Always return TRUE: a JNI hiccup inside MarshalBitmaps must not
++	   skip pointer_cache_put() in the caller, otherwise future
++	   PointerCached updates against this cache index also fail and
++	   the cursor freezes. */
++	(void)android_Pointer_MarshalBitmaps(env, (jlong)context->instance,
++	                                     "OnPointerEventNew", pointer);
++
++	if (attached == JNI_TRUE)
++		jni_detach_thread();
+ 	return TRUE;
+ }
+ 
++/*
++ * Pointer_Free runs when the cached entry is replaced. Bitmap memory
++ * is freed by FreeRDP; Java does not retain a copy.
++ */
+ static void android_Pointer_Free(rdpContext* context, rdpPointer* pointer)
+ {
+ 	if (!context || !pointer)
+ 		return;
+ }
+ 
++/*
++ * Pointer_Set is what cache/pointer.c:update_pointer_set calls when
++ * activating a previously cached entry. Bitmap data is still valid on
++ * the cached rdpPointer so resend it.
++ */
+ static BOOL android_Pointer_Set(rdpContext* context, const rdpPointer* pointer)
+ {
+-	if (!context)
+-		return FALSE;
+-
++	if (!context || !context->instance || !pointer)
++		return FALSE;
++
++	JNIEnv* env = NULL;
++	jboolean attached = jni_attach_thread(&env);
++	if (!env)
++	{
++		if (attached == JNI_TRUE)
++			jni_detach_thread();
++		return FALSE;
++	}
++
++	(void)android_Pointer_MarshalBitmaps(env, (jlong)context->instance,
++	                                     "OnPointerEventSet", pointer);
++
++	if (attached == JNI_TRUE)
++		jni_detach_thread();
+ 	return TRUE;
+ }
+ 
+ static BOOL android_Pointer_SetPosition(rdpContext* context, UINT32 x, UINT32 y)
+ {
+-	if (!context)
+-		return FALSE;
+-
++	if (!context || !context->instance)
++		return FALSE;
++	freerdp_callback("OnPointerEventSetPosition", "(JII)V",
++	                 (jlong)context->instance, (jint)x, (jint)y);
+ 	return TRUE;
+ }
+ 
+ static BOOL android_Pointer_SetNull(rdpContext* context)
+ {
+-	if (!context)
+-		return FALSE;
+-
++	if (!context || !context->instance)
++		return FALSE;
++	freerdp_callback("OnPointerEventHide", "(J)V", (jlong)context->instance);
+ 	return TRUE;
+ }
+ 
+ static BOOL android_Pointer_SetDefault(rdpContext* context)
+ {
+-	if (!context)
+-		return FALSE;
+-
++	if (!context || !context->instance)
++		return FALSE;
++	freerdp_callback("OnPointerEventDefault", "(J)V", (jlong)context->instance);
+ 	return TRUE;
+ }
+ 
+@@ -321,6 +444,13 @@
+ 
+ 	if (!android_register_pointer(instance->context->graphics))
+ 		return FALSE;
++
++	/* gdi_init_ex() leaves the pointer-cache decoders NULL on purpose;
++	   without installing them here, every PointerColor/PointerNew/
++	   PointerLarge/PointerCached PDU from the server is dropped at
++	   update_recv_pointer() before it ever reaches android_Pointer_New
++	   or android_Pointer_Set above. */
++	pointer_cache_register_callbacks(update);
+ 
+ 	instance->update->BeginPaint = android_begin_paint;
+ 	instance->update->EndPaint = android_end_paint;
+--- a/client/Android/Studio/freeRDPCore/src/main/java/com/freerdp/freerdpcore/services/LibFreeRDP.java
++++ b/client/Android/Studio/freeRDPCore/src/main/java/com/freerdp/freerdpcore/services/LibFreeRDP.java
+@@ -614,6 +614,66 @@
+ 			uiEventListener.OnRemoteClipboardChanged(data);
+ 	}
+ 
++	private static void OnPointerEventNew(long inst, byte[] andMask, byte[] xorMask,
++	                                      int width, int height, int xorBpp,
++	                                      int lengthAndMask, int lengthXorMask,
++	                                      int hotspotX, int hotspotY)
++	{
++		SessionState s = GlobalApp.getSession(inst);
++		if (s == null)
++			return;
++		UIEventListener uiEventListener = s.getUIEventListener();
++		if (uiEventListener != null)
++			uiEventListener.OnPointerEventNew(andMask, xorMask, width, height,
++			                                  xorBpp, lengthAndMask, lengthXorMask,
++			                                  hotspotX, hotspotY);
++	}
++
++	private static void OnPointerEventSet(long inst, byte[] andMask, byte[] xorMask,
++	                                      int width, int height, int xorBpp,
++	                                      int lengthAndMask, int lengthXorMask,
++	                                      int hotspotX, int hotspotY)
++	{
++		SessionState s = GlobalApp.getSession(inst);
++		if (s == null)
++			return;
++		UIEventListener uiEventListener = s.getUIEventListener();
++		if (uiEventListener != null)
++			uiEventListener.OnPointerEventSet(andMask, xorMask, width, height,
++			                                  xorBpp, lengthAndMask, lengthXorMask,
++			                                  hotspotX, hotspotY);
++	}
++
++	private static void OnPointerEventSetPosition(long inst, int x, int y)
++	{
++		SessionState s = GlobalApp.getSession(inst);
++		if (s == null)
++			return;
++		UIEventListener uiEventListener = s.getUIEventListener();
++		if (uiEventListener != null)
++			uiEventListener.OnPointerEventSetPosition(x, y);
++	}
++
++	private static void OnPointerEventHide(long inst)
++	{
++		SessionState s = GlobalApp.getSession(inst);
++		if (s == null)
++			return;
++		UIEventListener uiEventListener = s.getUIEventListener();
++		if (uiEventListener != null)
++			uiEventListener.OnPointerEventHide();
++	}
++
++	private static void OnPointerEventDefault(long inst)
++	{
++		SessionState s = GlobalApp.getSession(inst);
++		if (s == null)
++			return;
++		UIEventListener uiEventListener = s.getUIEventListener();
++		if (uiEventListener != null)
++			uiEventListener.OnPointerEventDefault();
++	}
++
+ 	public static String getVersion()
+ 	{
+ 		return freerdp_get_version();
+@@ -652,5 +712,19 @@
+ 		void OnGraphicsResize(int width, int height, int bpp);
+ 
+ 		void OnRemoteClipboardChanged(String data);
++
++		// Default methods (Java 8+) so existing UIEventListener implementors
++		// (e.g. SessionActivity) don't have to be touched. Static dispatchers in
++		// LibFreeRDP still call through these and forward to a real implementor
++		// via uiEventListener, so default-empty is safe — the only implementor
++		// that does anything is remoteClientLib/RdpCommunicator.
++		default void OnPointerEventNew(byte[] andMask, byte[] xorMask, int width,
++		                               int height, int xorBpp, int lengthAndMask,
++		                               int lengthXorMask, int hotspotX, int hotspotY) {}
++
++		default void OnPointerEventSet(byte[] andMask, byte[] xorMask, int width,
++		                               int height, int xorBpp, int lengthAndMask,
++		                               int lengthXorMask, int hotspotX, int hotspotY) {}
++
++		default void OnPointerEventSetPosition(int x, int y) {}
++
++		default void OnPointerEventHide() {}
++
++		default void OnPointerEventDefault() {}
+ 	}
+ }

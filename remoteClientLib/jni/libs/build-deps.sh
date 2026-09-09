@@ -468,7 +468,8 @@ build() {
     fetch configsub
 
     # Build gstreamer with cerbero
-    build_cerbero "$1"
+
+    # build_cerbero "$1"  # skipped for aRDP-only build
 
     # Build
     for package in $packages
