@@ -86,7 +86,13 @@ public class RdpExtraGridPanel extends LinearLayout {
             // blank above the IME; the modifier row above stays usable.
             setVisibility(GONE);
         }
-        addView(extraKeysView);
+        // Propagate the parent's height to the GridLayout so its FILL rowSpecs
+        // can distribute the 192dp panel across rows. With the default
+        // WRAP_CONTENT the GridLayout collapses (reload() sets per-row
+        // height=0 on non-Lollipop), which renders as an empty slab.
+        addView(extraKeysView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.MATCH_PARENT));
     }
 
     /**

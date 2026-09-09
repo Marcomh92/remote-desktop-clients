@@ -203,20 +203,20 @@ Future refactors should normalize the leak (shut down `inputExecutor` in `close`
 
 | Gesture | Where | Wire mapping |
 |---|---|---|
-| Cursor fling | `TouchInputHandlerTouchpad.java:247-280` + inner `Flinger:607-676` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_NOISE_PX_PER_S=200` floor. The per-tick damping factor is a runtime-configurable instance field `flingDamp` (default `FLING_DAMP=0.86f`); `RemoteCanvasActivity.getFlingResistanceDamp` (slider → `0.92f - slider*0.01f`, default slider 6 → 0.86 = legacy) pushes it via `setFlingDamp:111-113` from `getInputHandlerById:1261-1263` and `onResume:911-913`. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Edge-clamped ticks stop the flinger early. Cancels on new touch-down and returns false while the adaptive double-tap state machine is `PENDING` or `DRAGGING`. |
+| Cursor fling | `TouchInputHandlerTouchpad.java:247-280` + inner `Flinger:607-679` | `pointer.moveMouse(...)` per tick. `FLING_TICK_MS=20`, `FLING_NOISE_PX_PER_S=200` floor. The per-tick damping factor is a runtime-configurable instance field `flingDamp` (default `FLING_DAMP=0.86f`); `RemoteCanvasActivity.getFlingResistanceDamp` (slider → `0.92f - slider*0.01f`, default slider 6 → 0.86 = legacy) pushes it via `setFlingDamp:111-113` from `getInputHandlerById:1267-1268` and `onResume:911-917`. Velocity scaled by `cbrt(zoom) * sensitivity / density`. Round 5 added `viewable.movePanToMakePointerVisible()` after each per-tick `moveMouse(...)` (line `:667`), mirroring `onScroll` / `performTapClick`, so the viewport keeps the flung cursor visible while the IME is open. Edge-clamped ticks stop the flinger early. Cancels on new touch-down and returns false while the adaptive double-tap state machine is `PENDING` or `DRAGGING`. `EdgePinRepeater` is deliberately not invoked here — INV-023 (panning during edge-pin would shift the finger out of the 24 dp band). |
 | Long-press = synthesized right click | `onLongPress:311-344` | `pointer.rightButtonDown(x, y, meta)` immediately, then a `viewable.getHandler().postDelayed(... releaseButton, 40)` fires the matching up while the finger is still down. `rightDragMode` is intentionally **not** set so no drag cursor follows; the parent UP branch's `releaseButton` is idempotent. `onScroll` is suppressed during `rightDragMode` (which only the two-finger-tap path enters). Clears `rdpDoubleTapPending` / `rdpDoubleTapDragging` and stops `edgePinRepeater` for mutual exclusion with the adaptive double-tap and drag-hold edge pinning. |
 | **Adaptive** double-tap-and-hold = press-and-drag OR double-click | `onDoubleTap:359-371`, `onTouchEvent:382-442`, helpers `commitDoubleTapDrag:450-461` + `emitDoubleTapDoubleClick:467-474` + `cancelDoubleTapGesture:480-488` | The 2nd tap's `DOWN` arms `PENDING` and sends NOTHING. `ACTION_MOVE` past a tiny fixed slop (`rdpTouchSlop = max(2, DRAG_THRESHOLD_DP * density)`, `DRAG_THRESHOLD_DP=2f` — round 4) commits a left-button press-and-drag; `ACTION_UP` without movement emits two `performTapClick` pairs (a true double-click); `ACTION_CANCEL` releases the held button. Round 4 replaced the `getScaledTouchSlop()/2` heuristic — that was too coarse and cancelled genuine intended drags with tiny finger motion. |
-| **Drag-hold edge pinning** (round 4) | Inner `EdgePinRepeater:686-740`; started/updated from `updateEdgePinRepeater:575-600` driven by `onTouchEvent:433-438` (`ACTION_MOVE` while `rdpDoubleTapDragging`) | While a committed double-click+drag is pinned in the 24 dp canvas-edge band (`EDGE_PIN_BAND_DP`), posts 20 ms ticks on `viewable.getHandler()` that call `pointer.moveMouseButtonDown` (LEFT held) with constant velocity 100 dp/s (`EDGE_PIN_SPEED_DP_PER_S`). Displacement: `vx*dt*sensitivity/displayDensity*cbrt(zoom)`. Stops on `ACTION_UP`/`ACTION_CANCEL`/`ACTION_DOWN`/`setRdp(false)`/`onLongPress`, finger leaving the band, or remote-desktop edge clamp. |
+| **Drag-hold edge pinning** (round 4) | Inner `EdgePinRepeater:689-744`; started/updated from `updateEdgePinRepeater:575-600` driven by `onTouchEvent:433-438` (`ACTION_MOVE` while `rdpDoubleTapDragging`) | While a committed double-click+drag is pinned in the 24 dp canvas-edge band (`EDGE_PIN_BAND_DP`), posts 20 ms ticks on `viewable.getHandler()` that call `pointer.moveMouseButtonDown` (LEFT held) with constant velocity 100 dp/s (`EDGE_PIN_SPEED_DP_PER_S`). Displacement: `vx*dt*sensitivity/displayDensity*cbrt(zoom)`. Stops on `ACTION_UP`/`ACTION_CANCEL`/`ACTION_DOWN`/`setRdp(false)`/`onLongPress`, finger leaving the band, or remote-desktop edge clamp. |
 
 **Wiring.**
-- `RemoteCanvasActivity.setInputHandler:1350-1356` calls `touchInputHandler.setRdp(true)` (implicit via the `TouchInputHandlerTouchpad` constructor path + `onCreateOptionsMenu`).
-- `RemoteCanvasActivity.onDestroy:1378-1391` calls `setRdp(false)` so any in-flight fling runnable is cancelled and `dragMode` / `rightDragMode` / `middleDragMode` are cleared. If a drag is in flight, `setRdp(false)` defensively releases the held button at the current pointer position. `setRdp(false)` also clears the adaptive-double-tap state AND stops the `edgePinRepeater` (round 4) for teardown safety.
+- `RemoteCanvasActivity.setInputHandler:1415-...` calls `touchInputHandler.setRdp(true)` (implicit via the `TouchInputHandlerTouchpad` constructor path + `onCreateOptionsMenu`).
+- `RemoteCanvasActivity.onDestroy:1456-...` calls `setRdp(false)` so any in-flight fling runnable is cancelled and `dragMode` / `rightDragMode` / `middleDragMode` are cleared. If a drag is in flight, `setRdp(false)` defensively releases the held button at the current pointer position. `setRdp(false)` also clears the adaptive-double-tap state AND stops the `edgePinRepeater` (round 4) for teardown safety.
 - `ConnectionBean.getDefaultInputMode:183-193` writes `TOUCHPAD_MODE` for new RDP connections. Stored `INPUTMODE` values are not migrated.
 
 **Round-4 tunables wired through the same instance setters:**
-- `RemoteCanvasActivity.onCreate:307` calls `canvas.setEdgeThresholdDp(getEdgeThresholdDpPref())` (replaces the legacy `Constants.H/W_THRESH` constants).
-- `RemoteCanvasActivity.onResume:906-913` re-pushes all three: `setEdgeThresholdDp` + `setAccelerationStrength` + `setFlingDamp`.
-- `RemoteCanvasActivity.getInputHandlerById:1240` calls `setAccelerationStrength` and `:1261-1263` calls `setFlingDamp` whenever a touchpad handler is returned — so freshly constructed handlers pick up live slider values without an activity recreate.
+- `RemoteCanvasActivity.onCreate:311` calls `canvas.setEdgeThresholdDp(getEdgeThresholdDpPref())` (replaces the legacy `Constants.H/W_THRESH` constants).
+- `RemoteCanvasActivity.onResume:905-918` re-pushes all three: `setEdgeThresholdDp` + `setAccelerationStrength` + `setFlingDamp`.
+- `RemoteCanvasActivity.getInputHandlerById:1237-1268` calls `setAccelerationStrength` at `:1245` and `setFlingDamp` at `:1267-1268` whenever a touchpad handler is returned — so freshly constructed handlers pick up live slider values without an activity recreate.
 
 ---
 
@@ -232,11 +232,13 @@ fbH   = canvas.getImageHeight();
 cover = max(viewW / fbW, viewH / fbH);
 ```
 
-**Why `rdpFullViewHeight` (round 3).** The IME hides part of the canvas and `recomputeRdpViewport` lowers `canvas.setVisibleDesktopHeight(...)` (and only that — the framebuffer is not reallocated, see INV-002). Round 1/2 used `canvas.visibleHeight` for the floor, which is **self-referential**: the floor shrinks with the viewport, the scaled bitmap exactly covers the (shrunk) viewport, and `RemoteCanvas.movePanToMakePointerVisible`'s pan gate (`fbHeight < getVisibleDesktopHeight()`) goes false — vertical panning to follow the cursor behind the IME stops working on devices where the window does not resize when the IME opens. Round 3 captures the physical full-screen height once when the IME is closed (`RemoteCanvas.rdpFullViewHeight`, init `-1`, package-scope accessors at `:876-882`), and `computeMinimumScale` uses it. The floor is recomputed on every `zoomOut` and `changeZoom` call so it tracks the live full-screen height across rotation / multi-window resize.
+**Why `rdpFullViewHeight` (round 3).** The IME hides part of the canvas and `recomputeRdpViewport` lowers `canvas.setVisibleDesktopHeight(...)` (and only that — the framebuffer is not reallocated, see INV-002). Round 1/2 used `canvas.visibleHeight` for the floor, which is **self-referential**: the floor shrinks with the viewport, the scaled bitmap exactly covers the (shrunk) viewport, and `RemoteCanvas.movePanToMakePointerVisible`'s pan gate (`fbHeight < getVisibleDesktopHeight()`) goes false — vertical panning to follow the cursor behind the IME stops working on devices where the window does not resize when the IME opens. Round 3 captures the physical full-screen height once when the IME is closed (`RemoteCanvas.rdpFullViewHeight`, init `-1`, package-scope accessors at `:911-920`), and `computeMinimumScale` uses it. The floor is recomputed on every `zoomOut` and `changeZoom` call so it tracks the live full-screen height across rotation / multi-window resize.
+
+**Pinch-to-zoom clamp (round 5 — verified, no code change).** `ZoomScaling.changeZoom:131-144` clamps the new scale to `[computeMinimumScale, 4.0]`. The floor is recomputed live per call, so a zoom-out lands exactly on the cover-scale floor for the current `rdpFullViewHeight`. The only caveat: a user override of the global scaling pref to `FIT_CENTER` / `CENTER` makes pinch a no-op (pre-existing, unrelated to the floor).
 
 **Where.**
-- `bVNC/src/main/java/com/iiordanov/bVNC/ZoomScaling.java:223-235` (`computeMinimumScale`, `computeCoverScale`).
-- `RemoteCanvas.rdpFullViewHeight` field at `:109`; setter called only from `RemoteCanvasActivity.recomputeRdpViewport:1641-1672`. Never set to the shrunk viewport.
+- `bVNC/src/main/java/com/iiordanov/bVNC/ZoomScaling.java:223-235` (`computeMinimumScale`, `computeCoverScale`); `:131-144` (`changeZoom` clamp).
+- `RemoteCanvas.rdpFullViewHeight` field at `:117`; setter called only from `RemoteCanvasActivity.recomputeRdpViewport:1677-1708`. Never set to the shrunk viewport.
 
 ---
 
@@ -247,14 +249,14 @@ cover = max(viewW / fbW, viewH / fbH);
 | State | Visible surface | Notes |
 |---|---|---|
 | `NONE` | None | Container hidden. Default on session start. |
-| `KEYBOARD` | Software IME + modifier row above it | Transition triggered by `keyboardToggleButton` tap, the round-3 IME insets listener (`onCreate:315-339`), the legacy `relayoutViews` 19% heuristic, or `onBackPressed`. |
+| `KEYBOARD` | Software IME + modifier row above it | Transition triggered by `keyboardToggleButton` tap, the round-3 IME insets listener (`onCreate:322-...`), the legacy `relayoutViews` 19% heuristic, or `onBackPressed`. |
 | `EXTRA` | Extra-keys grid + modifier row above it (IME hidden) | Triggered by `123` button. Survives IME hide; only an explicit `KEYBOARD` transition (`123` again, `onBackPressed`, or `hideKeyboardAndExtraKeys`) collapses it. |
 
-**Owner.** `RemoteCanvasActivity.setInputAreaState:1612-1628` is the only mutator. `updateRdpInputAreaVisibility:1681-1689` reapplies visibility after the state changes, then `recomputeRdpViewport` is called (RDP-gated) so the viewport tracks the new container visibility.
+**Owner.** `RemoteCanvasActivity.setInputAreaState:1648-1664` is the only mutator. `updateRdpInputAreaVisibility:1717-...` reapplies visibility after the state changes, then `recomputeRdpViewport` is called (RDP-gated at `:1661-1663`) so the viewport tracks the new container visibility.
 
-**Viewport owner (round 3).** `recomputeRdpViewport:1641-1672` is the single source of truth for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. Called from the IME insets listener, the end of `relayoutViews` (RDP-gated at `:609-615`), and the end of `setInputAreaState` (RDP-gated at `:1625-1627`). The legacy `relayoutViews` shrink block is RDP-gated out (`:514-517`).
+**Viewport owner (round 3).** `recomputeRdpViewport:1677-1708` is the single source of truth for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. Called from the IME insets listener at `:343`, the end of `relayoutViews` (RDP-gated at `:621`), and the end of `setInputAreaState` (RDP-gated at `:1661-1663`). The legacy `relayoutViews` shrink block is RDP-gated out (`:521-524`).
 
-**Gate.** Every RDP-specific branch (relayout branches `:454-599`, `:609-615`, the insets listener at `:315-339`, `onBackPressed:1734-1752`, `setInputHandler:1350-1356`, `onCreateOptionsMenu:1048-1103`, `setInputAreaState:1612-1628`) is gated by `Utils.isRdp(this)`. Non-RDP flavors remain byte-identical to the pre-RDP UX.
+**Gate.** Every RDP-specific branch (the insets listener at `:322-...`, `onBackPressed:1769-1798`, `setInputHandler:1415-...`, `onCreateOptionsMenu:1132-...`, `setInputAreaState:1648-1664`) is gated by `Utils.isRdp(this)`. Non-RDP flavors remain byte-identical to the pre-RDP UX.
 
 ---
 
@@ -272,9 +274,9 @@ Defaults reproduce the prior hardcoded value, so the slider at its default repro
 
 | Slider | Default → consumer value | Consumer field / setter | Push sites |
 |---|---|---|---|
-| `edgeThresholdDp` (default 35, max 60) | `getEdgeThresholdDpPref` → `dp` | `RemoteCanvas.edgeThreshDp` field (default `EDGE_THRESH_DP=35f` retained); `setEdgeThresholdDp:915-917` | `onCreate:307`, `onResume:906` |
-| `mouseAccelerationStrength` (default 10, max 20) | `getMouseAccelerationStrength` → `slider/10f` | `RemotePointer.accelerationStrength` field (default `DEFAULT_ACCELERATION_STRENGTH=1.0f`); `setAccelerationStrength:318-319` | `onResume:909`, `getInputHandlerById:1240` |
-| `flingResistance` (default 6, max 12) | `getFlingResistanceDamp` → `0.92f - slider*0.01f` (slider 6 → 0.86 = legacy `FLING_DAMP`) | `TouchInputHandlerTouchpad.flingDamp` field (default `FLING_DAMP=0.86f` retained); `setFlingDamp:111-113` | `onResume:911-913`, `getInputHandlerById:1261-1263` |
+| `edgeThresholdDp` (default 35, max 60) | `getEdgeThresholdDpPref` → `dp` | `RemoteCanvas.edgeThreshDp` field (default `EDGE_THRESH_DP=35f` retained at `:70-71`); `setEdgeThresholdDp:915-917` | `onCreate:311`, `onResume:911` |
+| `mouseAccelerationStrength` (default 10, max 20) | `getMouseAccelerationStrength` → `slider/10f` | `RemotePointer.accelerationStrength` field (default `DEFAULT_ACCELERATION_STRENGTH=1.0f`); `setAccelerationStrength:318-319` | `onResume:914`, `getInputHandlerById:1245` |
+| `flingResistance` (default 6, max 12) | `getFlingResistanceDamp` → `0.92f - slider*0.01f` (slider 6 → 0.86 = legacy `FLING_DAMP`) | `TouchInputHandlerTouchpad.flingDamp` field (default `FLING_DAMP=0.86f` retained); `setFlingDamp:111-113` | `onResume:911-917`, `getInputHandlerById:1267-1268` |
 
 **Why three push sites.** `onCreate` alone is insufficient because the activity isn't recreated when Settings changes the slider. `onResume` alone is insufficient because a fresh `TouchInputHandlerTouchpad` constructed inside `getInputHandlerById` is created lazily after `onCreate`/`onResume` have already fired. `getInputHandlerById` alone is insufficient because some setters (`setEdgeThresholdDp` on `RemoteCanvas`) live on a singleton-style object that exists long before the touchpad handler is built.
 

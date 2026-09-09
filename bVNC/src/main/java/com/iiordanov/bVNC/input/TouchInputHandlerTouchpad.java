@@ -662,6 +662,9 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             // The protocol's moveMouse → setNewPointerPosition path clamps to
             // desktop bounds, so fling ticks cannot wander off-screen.
             remoteInput.getPointer().moveMouse(x, y, meta);
+            // Mirror onScroll/performTapClick so the viewport pans to keep the
+            // flung cursor visible while the IME is open.
+            viewable.movePanToMakePointerVisible();
             int afterX = Math.round(remoteInput.getPointer().getX());
             int afterY = Math.round(remoteInput.getPointer().getY());
             if (beforeX == afterX && beforeY == afterY) {

@@ -80,6 +80,7 @@
 
     <string name="toggle_keyboard">Toggle Keyboard</string>
     <string name="show_keyboard">Show Keyboard</string>
+    <string name="back_press_to_disconnect">Press back again to disconnect</string>
     <string name="scroll_wheel">Scroll Wheel</string>
 
     <string name="input_method_help">Input Method Help</string>

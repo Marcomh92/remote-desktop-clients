@@ -65,6 +65,7 @@ import android.widget.LinearLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ListView;
+import android.widget.Toast;
 
 import androidx.viewpager.widget.ViewPager;
 
@@ -101,6 +102,7 @@ import com.iiordanov.bVNC.protocol.RemoteConnection;
 import com.iiordanov.bVNC.protocol.RemoteConnectionFactory;
 import com.iiordanov.util.SamsungDexUtils;
 import com.undatech.opaque.Connection;
+import com.undatech.opaque.MessageDialogs;
 import com.undatech.opaque.RemoteClientLibConstants;
 import com.undatech.opaque.dialogs.SelectTextElementFragment;
 import com.undatech.opaque.util.GeneralUtils;
@@ -169,6 +171,8 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     private FrameLayout rdpInputAreaContainer;
     private RdpModifierRowHandler rdpModifierRowHandler;
     private InputAreaState inputAreaState = InputAreaState.NONE;
+    private static final long DOUBLE_BACK_DISCONNECT_WINDOW_MS = 2000L;
+    private long lastBackPressForDisconnect = 0;
     private int lastImeHeightPx = 0; // RDP IME inset height in px; 0 = IME closed
     ActionBarPositionSaver toolbarPositionSaver = new ActionBarPositionSaver();
     int xPointerOffset = 0;
@@ -888,6 +892,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     protected void onPause() {
         super.onPause();
         Log.i(TAG, "onPause called.");
+        lastBackPressForDisconnect = 0;
         try {
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             imm.hideSoftInputFromWindow(canvas.getWindowToken(), 0);
@@ -1775,6 +1780,16 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         if (Utils.isRdp(this) && inputAreaState != InputAreaState.NONE) {
             hideKeyboard();
             setInputAreaState(InputAreaState.NONE);
+            return;
+        }
+        if (Utils.isRdp(this)) {
+            long now = SystemClock.uptimeMillis();
+            if (now - lastBackPressForDisconnect > DOUBLE_BACK_DISCONNECT_WINDOW_MS) {
+                lastBackPressForDisconnect = now;
+                MessageDialogs.displayToast2(this, getString(R.string.back_press_to_disconnect), Toast.LENGTH_SHORT);
+                return;
+            }
+            disconnectAndFinishActivity();
             return;
         }
         if (inputListener != null) {

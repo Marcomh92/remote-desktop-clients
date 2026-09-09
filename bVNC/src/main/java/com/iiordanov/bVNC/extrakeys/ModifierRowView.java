@@ -22,6 +22,7 @@ package com.iiordanov.bVNC.extrakeys;
 import android.content.Context;
 import android.os.SystemClock;
 import android.util.AttributeSet;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -99,9 +100,7 @@ public class ModifierRowView extends HorizontalScrollView {
     private static final int COLOR_ON_FG  = 0xFF80DEEA;
     private static final int COLOR_LOCK_BG = 0xFF80DEEA;
     private static final int COLOR_LOCK_FG = 0xFF212121;
-    private static final int COLOR_TOGGLE_OFF_BG = 0xFF00838B; // teal accent
-    private static final int COLOR_TOGGLE_OFF_FG = 0xFFFFFFFF;
-    private static final int COLOR_TOGGLE_ON_BG  = 0xFF80DEEA; // highlighted
+    private static final int COLOR_TOGGLE_ON_BG  = 0xFF80DEEA; // highlighted (EXTRA state)
     private static final int COLOR_TOGGLE_ON_FG  = 0xFF212121;
 
     private final EnumMap<ModifierKey, RowState> rowStates = new EnumMap<>(ModifierKey.class);
@@ -190,6 +189,7 @@ public class ModifierRowView extends HorizontalScrollView {
     private static MaterialButton makeButton(Context ctx, String label) {
         MaterialButton b = new MaterialButton(ctx, null, android.R.attr.buttonBarButtonStyle);
         b.setText(label);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         b.setAllCaps(false);
         b.setCornerRadius(0);
         b.setPadding(0, 0, 0, 0);
@@ -205,7 +205,7 @@ public class ModifierRowView extends HorizontalScrollView {
 
     private LinearLayout.LayoutParams buttonLayoutParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            dp(56), LinearLayout.LayoutParams.MATCH_PARENT);
+            dp(42), LinearLayout.LayoutParams.MATCH_PARENT);
         lp.setMargins(dp(1), 0, dp(1), 0);
         return lp;
     }
@@ -356,8 +356,9 @@ public class ModifierRowView extends HorizontalScrollView {
             toggleButton.setBackgroundColor(COLOR_TOGGLE_ON_BG);
             toggleButton.setTextColor(COLOR_TOGGLE_ON_FG);
         } else {
-            toggleButton.setBackgroundColor(COLOR_TOGGLE_OFF_BG);
-            toggleButton.setTextColor(COLOR_TOGGLE_OFF_FG);
+            // Rest state matches the sibling action keys (Del/Esc/Tab).
+            toggleButton.setBackgroundColor(COLOR_OFF_BG);
+            toggleButton.setTextColor(COLOR_OFF_FG);
         }
     }
 }
