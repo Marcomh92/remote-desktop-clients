@@ -916,6 +916,15 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             if (touchInputHandler != null && touchInputHandler instanceof TouchInputHandlerTouchpad) {
                 ((TouchInputHandlerTouchpad) touchInputHandler).setFlingDamp(getFlingResistanceDamp());
             }
+            // Re-apply runtime row sizing so pref changes made via the
+            // Settings screen mid-session take effect without reconnecting.
+            // Same getter pattern as the three round-4 values above; the
+            // handler / view setters are idempotent.
+            if (rdpModifierRowHandler != null) {
+                rdpModifierRowHandler.applyModifierRowSizing(
+                        getRdpModifierKeyHeightDp(),
+                        getRdpModifierKeySizeDp());
+            }
         } catch (NullPointerException e) {
             Log.d(TAG, "Ignoring NullPointerException during onResume");
         }
@@ -1320,6 +1329,14 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         return 0.92f - slider * 0.01f; // default slider 6 -> 0.86 (legacy FLING_DAMP); higher slider = more resistance = shorter fling
     }
 
+    int getRdpModifierKeyHeightDp() {
+        return Utils.querySharedPreferencesInt(this, Constants.rdpModifierKeyHeightDp, Constants.DEFAULT_RDP_MODIFIER_KEY_HEIGHT_DP);
+    }
+
+    int getRdpModifierKeySizeDp() {
+        return Utils.querySharedPreferencesInt(this, Constants.rdpModifierKeySizeDp, Constants.DEFAULT_RDP_MODIFIER_KEY_SIZE_DP);
+    }
+
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         RemoteKeyboard k = remoteConnection.getKeyboard();
@@ -1438,6 +1455,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                     state -> setInputAreaState(state));
             if (rdpModifierRowHandler != null) {
                 rdpModifierRowHandler.onKeyboardReady();
+                // Apply runtime user-preference row sizing to the freshly-built
+                // row. Re-uses the round-4 getter pattern; idempotent on
+                // ModifierRowView, so safe to also push from onResume.
+                rdpModifierRowHandler.applyModifierRowSizing(
+                        getRdpModifierKeyHeightDp(),
+                        getRdpModifierKeySizeDp());
             }
         }
     }

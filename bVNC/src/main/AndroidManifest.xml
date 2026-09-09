@@ -26,7 +26,8 @@
         android:smallScreens="true"
         android:xlargeScreens="true" />
 
-    <application>
+    <application
+        android:enableOnBackInvokedCallback="false">
         <activity
             android:name="com.iiordanov.pubkeygenerator.GeneratePubkeyActivity"
             android:configChanges="keyboardHidden|orientation"

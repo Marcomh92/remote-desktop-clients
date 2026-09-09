@@ -24,6 +24,7 @@ import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.ViewGroup;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 
@@ -117,6 +118,11 @@ public class ModifierRowView extends HorizontalScrollView {
     // Double-tap bookkeeping per-modifier (key + last-tap time).
     private ModifierKey lastTappedKey = null;
     private long lastTapTime = 0L;
+
+    // Last-applied row sizing (in dp). Stashed so setRowHeightDp / setKeySizeDp
+    // are idempotent and so future rebuilds can re-apply them.
+    private int appliedRowHeightDp = 0;
+    private int appliedKeySizeDp = 0;
 
     public ModifierRowView(Context context) {
         super(context);
@@ -230,6 +236,68 @@ public class ModifierRowView extends HorizontalScrollView {
         this.toggleListener = l;
     }
 
+    /**
+     * Resize the row's visible height. Buttons auto-stretch to
+     * {@code MATCH_PARENT}, so only the row container's own
+     * {@link android.view.ViewGroup.LayoutParams#height} needs to be updated
+     * here. Idempotent.
+     *
+     * @param dp desired height in density-independent pixels; ignored if
+     *          zero or negative (the previously applied height is retained).
+     */
+    public void setRowHeightDp(int dp) {
+        if (dp <= 0) return;
+        this.appliedRowHeightDp = dp;
+        ViewGroup.LayoutParams lp = getLayoutParams();
+        if (lp == null) return;
+        lp.height = dp(dp);
+        setLayoutParams(lp);
+    }
+
+    /**
+     * Resize every modifier / action / toggle button to the given width and
+     * scale the label text proportionally (12sp at the 42dp default, with an
+     * 8sp floor so the label stays readable at any allowed slider value).
+     * Operates on the existing button instances — buttons were created once
+     * at build time in {@link #init} and are not rebuilt here. Idempotent.
+     *
+     * @param dp desired button width in density-independent pixels; ignored
+     *          if zero or negative.
+     */
+    public void setKeySizeDp(int dp) {
+        if (dp <= 0) return;
+        this.appliedKeySizeDp = dp;
+        int widthPx = dp(dp);
+        // Scale the 12sp baseline at 42dp so a wider key gets a larger label.
+        // 8sp floor keeps the label readable when the user drags the slider
+        // to its minimum.
+        float textSp = Math.max(8f, 12f * dp / 42f);
+        for (MaterialButton b : modButtons.values()) resizeKeyButton(b, widthPx, textSp);
+        for (MaterialButton b : actionButtons.values()) resizeKeyButton(b, widthPx, textSp);
+        if (toggleButton != null) resizeKeyButton(toggleButton, widthPx, textSp);
+    }
+
+    private void resizeKeyButton(MaterialButton b, int widthPx, float textSp) {
+        ViewGroup.LayoutParams lp = b.getLayoutParams();
+        if (lp != null) {
+            lp.width = widthPx;
+            // Keep height MATCH_PARENT — the row container's height (set via
+            // setRowHeightDp) drives the visible button height.
+            b.setLayoutParams(lp);
+        }
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp);
+    }
+
+    /** @return last value passed to {@link #setRowHeightDp}, or 0 if never set. */
+    public int getAppliedRowHeightDp() {
+        return appliedRowHeightDp;
+    }
+
+    /** @return last value passed to {@link #setKeySizeDp}, or 0 if never set. */
+    public int getAppliedKeySizeDp() {
+        return appliedKeySizeDp;
+    }
+
     public boolean isOn(@NonNull ModifierKey key) {
         RowState s = rowStates.get(key);
         return s != null && s.isOn;
@@ -248,7 +316,11 @@ public class ModifierRowView extends HorizontalScrollView {
 
     /**
      * One-shot consumption: clears every ON (non-locked) modifier. Locked
-     * modifiers remain active. Notifies the listener once if anything changed.
+     * modifiers remain active. Refreshes visuals but intentionally does NOT
+     * notify {@link #modListener}: consumption is a side effect of the
+     * consuming key's DOWN, not a user tap. Re-bridging into the keyboard's
+     * onScreenMetaState is the caller's job (so the handler can release the
+     * modifier at the consuming key's UP, not early).
      */
     public void consumeOnModifiers() {
         boolean changed = false;
@@ -260,7 +332,6 @@ public class ModifierRowView extends HorizontalScrollView {
         }
         if (changed) {
             refreshAllVisuals();
-            if (modListener != null) modListener.onModifierStateChanged(this);
         }
     }
 

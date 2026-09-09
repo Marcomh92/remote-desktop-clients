@@ -256,7 +256,7 @@ cover = max(viewW / fbW, viewH / fbH);
 
 **Viewport owner (round 3).** `recomputeRdpViewport:1677-1708` is the single source of truth for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. Called from the IME insets listener at `:343`, the end of `relayoutViews` (RDP-gated at `:621`), and the end of `setInputAreaState` (RDP-gated at `:1661-1663`). The legacy `relayoutViews` shrink block is RDP-gated out (`:521-524`).
 
-**Gate.** Every RDP-specific branch (the insets listener at `:322-...`, `onBackPressed:1769-1798`, `setInputHandler:1415-...`, `onCreateOptionsMenu:1132-...`, `setInputAreaState:1648-1664`) is gated by `Utils.isRdp(this)`. Non-RDP flavors remain byte-identical to the pre-RDP UX.
+**Gate.** Every RDP-specific branch (the insets listener at `:322-...`, `onBackPressed:1793-1821`, `setInputHandler:1415-...`, `onCreateOptionsMenu:1132-...`, `setInputAreaState:1648-1664`) is gated by `Utils.isRdp(this)`. Non-RDP flavors remain byte-identical to the pre-RDP UX.
 
 ---
 
@@ -278,7 +278,20 @@ Defaults reproduce the prior hardcoded value, so the slider at its default repro
 | `mouseAccelerationStrength` (default 10, max 20) | `getMouseAccelerationStrength` → `slider/10f` | `RemotePointer.accelerationStrength` field (default `DEFAULT_ACCELERATION_STRENGTH=1.0f`); `setAccelerationStrength:318-319` | `onResume:914`, `getInputHandlerById:1245` |
 | `flingResistance` (default 6, max 12) | `getFlingResistanceDamp` → `0.92f - slider*0.01f` (slider 6 → 0.86 = legacy `FLING_DAMP`) | `TouchInputHandlerTouchpad.flingDamp` field (default `FLING_DAMP=0.86f` retained); `setFlingDamp:111-113` | `onResume:911-917`, `getInputHandlerById:1267-1268` |
 
-**Why three push sites.** `onCreate` alone is insufficient because the activity isn't recreated when Settings changes the slider. `onResume` alone is insufficient because a fresh `TouchInputHandlerTouchpad` constructed inside `getInputHandlerById` is created lazily after `onCreate`/`onResume` have already fired. `getInputHandlerById` alone is insufficient because some setters (`setEdgeThresholdDp` on `RemoteCanvas`) live on a singleton-style object that exists long before the touchpad handler is built.
+**RDP-only extension (round 6).** The modifier-row sizing knobs follow the same shape, but live in the RDP-only overlay file `global_preferences_rdp.xml` (the base `global_preferences.xml` is untouched):
+
+| Slider | Default → consumer value | Consumer field / setter | Push sites |
+|---|---|---|---|
+| `rdpModifierKeyHeightDp` (default 27, max 56) | `getRdpModifierKeyHeightDp` → `dp` | `ModifierRowView.appliedRowHeightDp` (setter at `:248-251`); `setRowHeightDp:248-251` (sets `ViewGroup.LayoutParams.height = dp` on the row container; buttons auto-stretch `MATCH_PARENT`) | `onResume:923-927`, `setInputHandler:1461-1463` |
+| `rdpModifierKeySizeDp` (default 42, max 72) | `getRdpModifierKeySizeDp` → `dp` | `ModifierRowView.appliedKeySizeDp` (setter at `:267-271`); `setKeySizeDp:267-271` (sets `lp.width = dp` on every modifier / action / toggle button; label text scales as `12sp × dp/42`, 8 sp floor) | same as height |
+
+Constants live at `bVNC/src/main/java/com/iiordanov/bVNC/Constants.java:178-179` (keys) and `:199-200` (defaults `27` / `42`); the two prefs are declared in `bVNC/src/main/res/xml/global_preferences_rdp.xml:5-14`. `RdpModifierRowHandler.applyModifierRowSizing(int, int)` (`bVNC/src/main/java/com/iiordanov/bVNC/extrakeys/RdpModifierRowHandler.java:243-246`) is the single push fan-out — it delegates to both `setRowHeightDp` / `setKeySizeDp` and is idempotent, so calling it from both `onResume` and `setInputHandler` is safe.
+
+**Why the RDP-only separation.** The base prefs file is shared across all four flavors and lives at the protocol-agnostic layer; modifier-row sizing is meaningful only for RDP (VNC/SPICE/Opaque use the legacy 3-page pager, see PAT-004). Keeping the row sliders in the RDP overlay means non-RDP wrappers never see the prefs in their settings UI. This is the intended split for future flavor-specific tunables — declare them in the `global_preferences_<flavor>.xml` overlay, not the base file.
+
+**Why two push sites instead of three.** The modifier-row sizing targets a single object (`ModifierRowView`) inside the RDP-only handler (`RdpModifierRowHandler`) — there is no lazily-constructed handler that can miss an `onResume` push. `onResume` covers the Settings-return live re-apply; `setInputHandler` covers the freshly-built handler after `onKeyboardReady()`. The base round-4 tunables need `getInputHandlerById` because `TouchInputHandlerTouchpad` is constructed lazily inside that method, after `onResume` has already fired — that case does not arise here.
+
+**Why three push sites (round 4 still).** `onCreate` alone is insufficient because the activity isn't recreated when Settings changes the slider. `onResume` alone is insufficient because a fresh `TouchInputHandlerTouchpad` constructed inside `getInputHandlerById` is created lazily after `onCreate`/`onResume` have already fired. `getInputHandlerById` alone is insufficient because some setters (`setEdgeThresholdDp` on `RemoteCanvas`) live on a singleton-style object that exists long before the touchpad handler is built.
 
 **Invariant.** Default slider values reproduce exact legacy behavior. See INV-021.
 

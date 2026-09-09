@@ -233,6 +233,18 @@ public class RdpModifierRowHandler {
         }
     }
 
+    /**
+     * Forward runtime user-preference sizing to the underlying
+     * {@link ModifierRowView}. Each setter is independently idempotent on
+     * the view (a no-op for non-positive values); callers may safely push
+     * both on every attach / {@code onResume}.
+     */
+    @MainThread
+    public void applyModifierRowSizing(int rowHeightDp, int keySizeDp) {
+        rowView.setRowHeightDp(rowHeightDp);
+        rowView.setKeySizeDp(keySizeDp);
+    }
+
     private void switchTo(@NonNull InputAreaState next) {
         if (currentState == next) return;
         onInputAreaStateChanged(next);
@@ -296,7 +308,19 @@ public class RdpModifierRowHandler {
     // ---------------------------------------------------------------------
 
     private void onRowModifierStateChanged(@NonNull ModifierRowView view) {
+        // User toggled a row modifier OFF / ON / LOCKED. Snapshot the keyboard's
+        // previous on-screen state, re-bridge, then physically release any bit
+        // that went away (so e.g. LOCKED Alt -> OFF fires LMENU up exactly once).
+        attachKeyboardIfAvailable();
+        RemoteRdpKeyboard kb = rdpKeyboard;
+        int prev = (kb != null) ? kb.getOnScreenMetaState() : 0;
         syncRowStateToKeyboard();
+        if (kb == null) return;
+        int now = kb.getOnScreenMetaState();
+        int released = prev & ~now;
+        if (released != 0) {
+            kb.releaseOnScreenModifiers(released);
+        }
     }
 
     /**
@@ -350,8 +374,10 @@ public class RdpModifierRowHandler {
     @MainThread
     private void onKeyDispatched() {
         rowView.consumeOnModifiers();
-        // consumeOnModifiers notifies its own listener, which calls
-        // syncRowStateToKeyboard, so no extra work here.
+        // Re-bridge so LOCKED modifiers still flow into onScreenMetaState and
+        // consumed one-shot bits fall out. consumeOnModifiers no longer fires
+        // the listener (consumption is internal, not a user toggle).
+        syncRowStateToKeyboard();
     }
 
     // ---------------------------------------------------------------------

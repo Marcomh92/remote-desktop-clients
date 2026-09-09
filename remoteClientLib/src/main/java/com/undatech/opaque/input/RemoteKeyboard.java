@@ -202,6 +202,11 @@ public abstract class RemoteKeyboard {
         return onScreenMetaState | lastDownMetaState;
     }
 
+    /** Read-only view of the on-screen toggle modifier state. */
+    public int getOnScreenMetaState() {
+        return onScreenMetaState;
+    }
+
     public void setAfterMenu(boolean value) {
         afterMenu = value;
     }

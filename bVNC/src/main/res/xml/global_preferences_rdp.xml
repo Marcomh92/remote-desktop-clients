@@ -2,4 +2,14 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
     <EditTextPreference
         android:key="preferenceSpacerBottomRdp" />
+    <SeekBarPreference
+        android:defaultValue="27"
+        android:key="rdpModifierKeyHeightDp"
+        android:max="56"
+        android:title="@string/rdp_modifier_key_height_dp" />
+    <SeekBarPreference
+        android:defaultValue="42"
+        android:key="rdpModifierKeySizeDp"
+        android:max="72"
+        android:title="@string/rdp_modifier_key_size_dp" />
 </PreferenceScreen>

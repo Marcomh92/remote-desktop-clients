@@ -220,4 +220,13 @@ public class RemoteKeyboardState {
             remoteKeyboardMetaState &= ~modifier;
         }
     }
+
+    /**
+     * True if the modifier mask is currently marked as physically pressed on
+     * the remote (i.e. its VK has been sent DOWN and not yet UP). Used by
+     * the RDP modifier row to suppress spurious releases.
+     */
+    public boolean isRemoteKeyDown(int modifier) {
+        return (remoteKeyboardMetaState & modifier) != 0;
+    }
 }

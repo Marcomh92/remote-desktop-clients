@@ -233,6 +233,29 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
         }
     }
 
+    /**
+     * Releases any on-screen modifier VKs in {@code modifierMask} that are
+     * currently marked as physically down on the remote (i.e. for which
+     * {@code remoteKeyboardMetaState} carries the corresponding bit). Used by
+     * the RDP modifier row to physically release a held modifier when the user
+     * toggles it off — independent of the per-key {@code sendModifierKeys}
+     * delta logic so a row toggle produces a single VK UP without affecting
+     * other modifiers that are still logically held.
+     */
+    public void releaseModifierKeys(int modifierMask) {
+        for (int mask : modifierMap.keySet()) {
+            if ((modifierMask & mask) == 0) continue;
+            if (!remoteKeyboardState.isRemoteKeyDown(mask)) continue;
+            Integer modifier = modifierMap.get(mask);
+            if (modifier != null) {
+                GeneralUtils.debugLog(this.debugLogging, TAG, "releaseModifierKeys, modifierMask:" +
+                        mask + ", sending: " + modifier + ", down: false");
+                sendKeyEventOnNewThread(modifier, false);
+                remoteKeyboardState.updateRemoteMetaState(mask, false);
+            }
+        }
+    }
+
     // ****************************************************************************
     // KeyboardMapper.KeyProcessingListener implementation
     @Override

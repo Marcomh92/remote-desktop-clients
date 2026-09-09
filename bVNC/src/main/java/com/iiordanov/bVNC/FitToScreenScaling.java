@@ -88,6 +88,58 @@ class FitToScreenScaling extends AbstractScaling {
         return scaling;
     }
 
+    /* (non-Javadoc)
+     * @see com.iiordanov.bVNC.AbstractScaling#adjust(com.iiordanov.bVNC.RemoteCanvasActivity, float, float, float)
+     */
+    @Override
+    public void changeZoom(RemoteCanvasActivity activity, float scaleFactor, float fx, float fy) {
+
+        float oldScale;
+        float newScale = scaleFactor * scaling;
+        float floor = minimumScale;
+        if (scaleFactor < 1) {
+            if (newScale < floor) {
+                newScale = floor;
+            }
+        } else {
+            if (newScale > 4) {
+                newScale = 4;
+            }
+        }
+
+        RemoteCanvas canvas = activity.getCanvas();
+        // ax is the absolute x of the focus
+        int xPan = canvas.absoluteXPosition;
+        float ax = (fx / scaling) + xPan;
+        float newXPan = (scaling * xPan - scaling * ax + newScale * ax) / newScale;
+        int yPan = canvas.absoluteYPosition;
+        float ay = (fy / scaling) + yPan;
+        float newYPan = (scaling * yPan - scaling * ay + newScale * ay) / newScale;
+
+        // Here we do snapping to 1:1. If we are approaching scale = 1, we snap to it.
+        oldScale = scaling;
+        if ((newScale > 0.95f && newScale < 1.00f) ||
+                (newScale > 1.00f && newScale < 1.05f)) {
+            newScale = 1.f;
+        }
+
+        resetMatrix();
+        scaling = newScale;
+        matrix.postScale(scaling, scaling);
+        canvas.setImageMatrix(matrix);
+        resolveZoom(activity);
+
+        // Only if we have actually scaled do we pan and potentially set mouse position.
+        // Use absolutePan (not relativePan) so the canvasZoomer.isAbleToPan() gate
+        // in RemoteCanvas.relativePan — which is hard-coded false for this scaling
+        // mode — does not silently drop the focal-anchored pan delta. absolutePan
+        // sets absoluteXPosition/absoluteYPosition directly with edge clamping and
+        // triggers the same resetScroll() redraw path.
+        if (oldScale != newScale) {
+            canvas.absolutePan((int) newXPan, (int) newYPan);
+        }
+    }
+
     private void resetMatrix() {
         matrix.reset();
         matrix.preTranslate(canvasXOffset, canvasYOffset);

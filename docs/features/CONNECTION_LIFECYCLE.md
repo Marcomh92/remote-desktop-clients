@@ -200,6 +200,8 @@ Activity onDestroy
 
 `RdpCommunicator.close` (`:204-210`) does not explicitly shut down `inputExecutor` or join `DisconnectThread` — both leak until process death. See `DESIGN_PRINCIPLES.md` §"Known gaps".
 
+For held modifier VKs, the disconnect sweep uses the round-5 dummy key-up path — **not** the round-6 `RdpCommunicator.releaseModifierKeys(int)` path. INV-024 (`DESIGN_PRINCIPLES.md` §INV, `features/INPUT_PIPELINE.md` §4.3.4) restricts `releaseModifierKeys` to user-toggle-OFF side effects only; the disconnect path deliberately relies on `RdpModifierRowHandler.resetRowState:228-234` to clear the visual row state and `RemoteConnection.closeConnection`'s dummy key-up sweep to release any VKs that were already on the wire. See INV-008 for the modifier-state-leak gap (still open across reconnects within the same Activity instance).
+
 ---
 
 ## 5. Multi-instance / multi-window considerations

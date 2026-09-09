@@ -175,6 +175,8 @@ public class Constants {
     public static final String edgeThresholdDp = "edgeThresholdDp";
     public static final String mouseAccelerationStrength = "mouseAccelerationStrength";
     public static final String flingResistance = "flingResistance";
+    public static final String rdpModifierKeyHeightDp = "rdpModifierKeyHeightDp";
+    public static final String rdpModifierKeySizeDp = "rdpModifierKeySizeDp";
     public static final String localToRemoteClipboardIntegration = "localToRemoteClipboardIntegration";
     public static final String remoteToLocalClipboardIntegration = "remoteToLocalClipboardIntegration";
     public static final String EXTRA_KEYS_TOUR_SHOWN = "extraKeysTourShown";
@@ -194,6 +196,8 @@ public class Constants {
     public static final int DEFAULT_EDGE_THRESHOLD_DP = 35;
     public static final int DEFAULT_MOUSE_ACCELERATION_STRENGTH = 10;
     public static final int DEFAULT_FLING_RESISTANCE = 6;
+    public static final int DEFAULT_RDP_MODIFIER_KEY_HEIGHT_DP = 27;
+    public static final int DEFAULT_RDP_MODIFIER_KEY_SIZE_DP = 42;
 
     public static final String DEFAULT_VPN_URI_SCHEME = "vpn";
 

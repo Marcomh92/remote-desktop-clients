@@ -58,7 +58,7 @@ There is **no Activity declared exclusively in a free flavor manifest**.
 
 ### 2.1 Global prefs (`bVNC/src/main/res/xml/global_preferences*.xml`)
 
-Loaded by `bVNC/src/main/java/com/iiordanov/bVNC/GlobalPreferencesFragment.java`. The active tree is `global_preferences.xml` + flavor overlay `_vnc` / `_rdp` / `_spice`. For aRDP the overlay (`global_preferences_rdp.xml`) currently contains a single visual spacer — no RDP-specific global preferences. All RDP settings are per-connection.
+Loaded by `bVNC/src/main/java/com/iiordanov/bVNC/GlobalPreferencesFragment.java`. The active tree is `global_preferences.xml` + flavor overlay `_vnc` / `_rdp` / `_spice`. For aRDP the overlay (`global_preferences_rdp.xml`) currently contains a visual spacer plus two SeekBarPreferences for round-6 modifier row sizing (see §2.2 / `PAT-016`). All RDP connection settings are per-connection; the row sizing prefs are global.
 
 `SharedPreferences` file name: `"generalSettings"`.
 
@@ -86,6 +86,8 @@ Loaded by `bVNC/src/main/java/com/iiordanov/bVNC/GlobalPreferencesFragment.java`
 | `permissionsRequested` | — | First-run permission request idempotency | `Constants.permissionsRequested` |
 | `positionToolbarLastUsed` | — | Toolbar position memory | `Constants.positionToolbarLastUsed` |
 | `rAltAsIsoL3Shift` | true (VNC overlay only) | Right-Alt → ISO L3 Shift | `global_preferences_vnc.xml:5` |
+| **`rdpModifierKeyHeightDp`** (round 6, RDP overlay only) | `27` → max `56` | Modifier row container height (dp); pushes `setRowHeightdp` on `ModifierRowView` | `global_preferences_rdp.xml:5-9`; `Constants.rdpModifierKeyHeightDp` / `DEFAULT_RDP_MODIFIER_KEY_HEIGHT_DP` (`Constants.java:178,199`); `RemoteCanvasActivity.getRdpModifierKeyHeightDp:1332-1334`; consumed via `RdpModifierRowHandler.applyModifierRowSizing:243-246` |
+| **`rdpModifierKeySizeDp`** (round 6, RDP overlay only) | `42` → max `72` | Per-button width (dp) on every modifier / action / toggle button; label text scales as `12sp × dp/42`, 8 sp floor | `global_preferences_rdp.xml:10-14`; `Constants.rdpModifierKeySizeDp` / `DEFAULT_RDP_MODIFIER_KEY_SIZE_DP` (`Constants.java:179,200`); `RemoteCanvasActivity.getRdpModifierKeySizeDp:1336-1338`; consumed via `applyModifierRowSizing:243-246` |
 | `PREF_USE_LAST_POSITION_TOOLBAR` + `_X` `_Y` `_MOVED` | — | Legacy per-id toolbar prefs; migrated to DB columns in `DBV_2_2_4` | `Database.java:604` `migrateToolbarPrefsToDb()` |
 
 ### 2.3 Per-connection columns relevant to aRDP
@@ -206,7 +208,7 @@ The Opaque flavor uses its own `SharedPreferences`-per-connection file instead (
 
 | Z-order | Element | Role |
 |---|---|---|
-| Top | `keyboardToggleButton @+id/keyboardToggleButton` | RDP-only floating button. Default `gone`; shown only when `Utils.isRdp(this)`. Cycle: `NONE → KEYBOARD → EXTRA → NONE`. Drag-vs-tap distinguished by an inline `OnTouchListener` (`RemoteCanvasActivity.onCreateOptionsMenu:1132-1168`); session-only position (no persistence). LAST child of `canvasLayout` to stay on top of the rest. **Round 5 restyle:** explicit 40 dp × 40 dp (was `wrap_content` ≈ 48 dp), 5 dp padding (was 6 dp), Material hamburger icon (`@drawable/ic_baseline_menu_48`, tint `#A0A0A0`), background `@drawable/bg_keyboard_toggle.xml` (13 dp corners, `#40000000` 25 % black; was flat `#80000000` 50 %). `canvas.xml` and `layout-large/canvas.xml` are kept byte-identical at `:154-165`. |
+| Top | `keyboardToggleButton @+id/keyboardToggleButton` | RDP-only floating button. Default `gone`; shown only when `Utils.isRdp(this)`. Cycle: `NONE → KEYBOARD → EXTRA → NONE`. Drag-vs-tap distinguished by an inline `OnTouchListener` (`RemoteCanvasActivity.onCreateOptionsMenu:1132-1168`); session-only position (no persistence). LAST child of `canvasLayout` to stay on top of the rest. **Round 5 restyle:** explicit 40 dp × 40 dp (was `wrap_content` ≈ 48 dp), 5 dp padding (was 6 dp), Material hamburger icon (`@drawable/ic_baseline_menu_48`, tint `#A0A0A0`), background `@drawable/bg_keyboard_toggle.xml` (13 dp corners, `#40000000` 25 % black; was flat `#80000000` 50 %). **Round 6 visual delta:** 40 dp → 32 dp, padding 5 dp → 4 dp; `bg_keyboard_toggle.xml` corners 13 dp → 10 dp, fill `#40000000` → `#33000000`. `canvas.xml` and `layout-large/canvas.xml` stay byte-identical at `:154-165`. |
 | ^ | `singleHandOpts` overlay | `RelativeLayout` (gone by default; visible only in `TouchInputHandlerSingleHanded`). Six buttons: `singleDrag`, `singleMiddle`, `singleRight`, `singleScroll`, `singleZoom`, `singleCancel`. |
 | ^ | `extraKeysToolbar` (`ViewPager @id/extraKeysToolbar`) | Legacy bottom pager (3 pages: SendText / Sticky mods / F-keys). Suppressed on RDP (`RemoteCanvasActivity.onGlobalLayout:537-541`); kept for VNC/SPICE/Opaque. |
 | ^ | `extraKeysPageIndicator` | Dots under the pager. |
@@ -237,21 +239,21 @@ The aRDP-specific bookmark editor layout. Top MaterialCardView (nickname, option
 | `bVNC/src/main/res/layout/metakey.xml` | MetaKeyDialog body |
 | `bVNC/src/main/res/layout/canvasactivitymenu.xml` | Canvas toolbar menu |
 | `bVNC/src/main/res/layout/rdp_input_area.xml` | RDP-only modifier row + "123" extra-keys grid; inflated into `rdpInputAreaContainer`. Not present in `layout-large/rdp_input_area.xml` (single layout for all configurations). Round 5: `ModifierRowView` height 40 dp → 27 dp; the inner grid panel (`RdpExtraGridPanel`) height stays at 192 dp so its GridLayout's FILL rowSpecs distribute the parent height. |
-| `bVNC/src/main/res/drawable/bg_keyboard_toggle.xml` | Round 5 shape drawable for the floating keyboard-toggle button: `<shape>` with `corners android:radius="13dp"` + `<solid android:color="#40000000" />` (25 % black). |
+| `bVNC/src/main/res/drawable/bg_keyboard_toggle.xml` | Floating keyboard-toggle button shape drawable. Round 5: `<shape>` with `corners android:radius="13dp"` + `<solid android:color="#40000000" />` (25 % black). **Round 6 visual delta:** corners 13 dp → 10 dp, fill `#40000000` → `#33000000` (≈ 20 % black). |
 | `bVNC/src/main/res/layout-large/canvas.xml` | Large-screen variant of `canvas.xml` — byte-identical to the default layout. The RDP-only overlay elements (`keyboardToggleButton`, `rdpInputAreaContainer`) are declared at the same IDs in both. |
 
-### 6.5 Back-press behavior (RDP-only, round 5)
+### 6.5 Back-press behavior (RDP-only)
 
-`RemoteCanvasActivity.onBackPressed:1769-1798` follows this RDP-gated order:
+`RemoteCanvasActivity.onBackPressed:1793-1821` follows this order:
 
 | Order | Source check | Action |
 |---|---|---|
-| 1 | `GeneralUtils.isTv(this)` (`:1771`) | Immediate `disconnectAndFinishActivity()` + super — TV branch unchanged. |
-| 2 | `Utils.isRdp(this) && inputAreaState != NONE` (`:1780`) | `setInputAreaState(NONE)` to collapse IME / "123" grid. |
-| 3 | `Utils.isRdp(this)` (`:1785-1794`) — round 5 | Stamp `lastBackPressForDisconnect` + toast `back_press_to_disconnect`; second press within `DOUBLE_BACK_DISCONNECT_WINDOW_MS = 2000L` calls `disconnectAndFinishActivity`. Press is NOT forwarded to the remote. Timestamp cleared in `onPause:895`. |
-| 4 | Non-RDP (`:1795-1797`) | Forward `KEYCODE_BACK` to `inputListener.onKey(...)`. Unchanged. |
+| 1 | `GeneralUtils.isTv(this)` (`:1794`) | Immediate `disconnectAndFinishActivity()` + super — TV branch unchanged. |
+| 2 | `Utils.isRdp(this) && inputAreaState != NONE` (`:1803-1807`) | `setInputAreaState(NONE)` to collapse IME / "123" grid. |
+| 3 | `Utils.isRdp(this)` (`:1808-1817`) — round 5 | Stamp `lastBackPressForDisconnect` + toast `back_press_to_disconnect`; second press within `DOUBLE_BACK_DISCONNECT_WINDOW_MS = 2000L` calls `disconnectAndFinishActivity`. Press is NOT forwarded to the remote. Timestamp cleared in `onPause:895`. |
+| 4 | Non-RDP (`:1818-1820`) | Forward `KEYCODE_BACK` to `inputListener.onKey(...)`. Unchanged. |
 
-The new toast string is `back_press_to_disconnect` (`bVNC/src/main/res/values/strings.xml:83`).
+The toast string is `back_press_to_disconnect` (`bVNC/src/main/res/values/strings.xml:83`). The round-5 disconnect flow is reachable only when `android:enableOnBackInvokedCallback="false"` is declared on `<application>` (`bVNC/src/main/AndroidManifest.xml:29`); see ADR-0002 and `features/INPUT_PIPELINE.md` §4.3.6. Without that flag, the predictive-back dispatcher swallows the press before `onBackPressed` runs and the round-5 path becomes unreachable on Android 13+.
 
 ---
 

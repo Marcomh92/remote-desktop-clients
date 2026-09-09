@@ -79,8 +79,14 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
                 evt = injectMetaState(evt, metaState);
                 lastDownMetaState = metaState;
             } else {
-                rdpcomm.writeKeyEvent(keyCode, lastDownMetaState, down);
-                evt = injectMetaState(evt, lastDownMetaState);
+                // On ACTION_UP, keep any on-screen modifier bits that are still
+                // physically held so Alt+Tab cycling keeps VK_LMENU down between
+                // Tab taps. one-shot modifiers that were already consumed by the
+                // matching DOWN have been cleared from onScreenMetaState, so the
+                // mask naturally releases for them (Alt+A wire unchanged).
+                int upMeta = lastDownMetaState & ~onScreenMetaState;
+                rdpcomm.writeKeyEvent(keyCode, upMeta, down);
+                evt = injectMetaState(evt, upMeta);
                 lastDownMetaState = 0;
             }
 
@@ -128,9 +134,27 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
             case KeyEvent.KEYCODE_ALT_RIGHT:
             case KeyEvent.KEYCODE_META_LEFT:
             case KeyEvent.KEYCODE_META_RIGHT:
+            case KeyEvent.KEYCODE_TAB:
+                // Tab is a deliberate exception: one-shot Alt / Ctrl / Shift /
+                // Super must survive Tab taps so Alt+Tab (and Ctrl+Tab /
+                // Shift+Tab) can cycle the switcher. Tab is not a modifier so
+                // it does not need a wire release event tied to consumption.
                 return;
             default:
                 keyDispatchedListener.onKeyDispatched();
+        }
+    }
+
+    /**
+     * Releases on-screen toggle modifier VKs currently held on the wire. Called
+     * by the modifier row handler when the user toggles a row modifier off
+     * (OFF / ON -> OFF transition): any LOCKED bit that flips to off and any
+     * one-shot bit that was still active must release on the remote. Only the
+     * RDP row handler invokes this — VNC/SPICE keep using sendModifierKeys.
+     */
+    public void releaseOnScreenModifiers(int mask) {
+        if (rdpcomm != null) {
+            rdpcomm.releaseModifierKeys(mask);
         }
     }
 
