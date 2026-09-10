@@ -176,11 +176,11 @@ if (now - lastDraw > 16.6666) {
 User taps Disconnect (or another window comes forward)
    |
    v
-RemoteCanvasActivity.disconnectAndFinishActivity:1181
+RemoteCanvasActivity.disconnectAndFinishActivity:1456
    remoteConnection.closeConnection(); Utils.justFinish(this)
                                                 |
                                                 v
-RemoteConnection.closeConnection:278-310
+RemoteConnection.closeConnection:279-316
    1. maintainConnection = false
    2. keyboard.clearMetaState()                    (only onScreenMetaState; see INV-008)
    3. send a dummy key-up to free any held VM keys
@@ -192,13 +192,17 @@ RemoteConnection.closeConnection:278-310
    7. sshConnection.terminateSSHTunnel()           (if SSH tunnel was used)
    8. canvas.writeScreenshotToFile(...)            (if thumbnails enabled)
    9. onDestroy()                                  -> cancels clipboardMonitorTimer, nulls clipboard monitor/decoder
+  10. RemoteSessionService.stop(context)           -> foreground session service (PAT-017)
 
 Activity onDestroy
    remoteConnection.closeConnection()              (idempotent re-run)
+   RemoteSessionService.stop(this)                 (defensive fallback, idempotent)
    System.gc()
 ```
 
 `RdpCommunicator.close` (`:204-210`) does not explicitly shut down `inputExecutor` or join `DisconnectThread` — both leak until process death. See `DESIGN_PRINCIPLES.md` §"Known gaps".
+
+The foreground session service is started from `RemoteCanvasActivity.onCreate:433` (only when `connection.isReadyForConnection()` is true at `:426`) right after `REINIT_SESSION` is posted, with the launching Intent's extras snapshotted into `sessionLaunchExtras` at `:429`. On Android 13+ the helper also requests `POST_NOTIFICATIONS` if not already granted (see `features/FOREGROUND_SESSION_SERVICE.md` §4.1); the service starts regardless of the prompt outcome. See `features/FOREGROUND_SESSION_SERVICE.md` for the full lifecycle and INV-026 for the must-start / must-stop invariants.
 
 For held modifier VKs, the disconnect sweep uses the round-5 dummy key-up path — **not** the round-6 `RdpCommunicator.releaseModifierKeys(int)` path. INV-024 (`DESIGN_PRINCIPLES.md` §INV, `features/INPUT_PIPELINE.md` §4.3.4) restricts `releaseModifierKeys` to user-toggle-OFF side effects only; the disconnect path deliberately relies on `RdpModifierRowHandler.resetRowState:228-234` to clear the visual row state and `RemoteConnection.closeConnection`'s dummy key-up sweep to release any VKs that were already on the wire. See INV-008 for the modifier-state-leak gap (still open across reconnects within the same Activity instance).
 

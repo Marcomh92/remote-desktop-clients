@@ -365,6 +365,11 @@
     <string name="info_progress_dialog_connecting">Connecting…</string>
     <string name="info_progress_dialog_downloading">Downloading first frame.\nPlease wait…</string>
     <string name="info_progress_dialog_establishing">Establishing handshake.\nPlease wait…</string>
+
+    <string name="remote_session_notification_title">Remote session active</string>
+    <string name="remote_session_notification_text">Tap to return to your session.</string>
+    <string name="remote_session_notification_channel_name">Active remote sessions</string>
+    <string name="remote_session_notification_channel_description">Keeps the remote-desktop session alive while the app is in the background.</string>
     <string name="info_ssh_initializing_hostkey">Attempting to initialize SSH HostKey.</string>
     <string name="info_ssh_key_fingerprint">"The host key fingerprint is: "</string>
     <string name="info_ssh_key_fingerprint_identical">\n\nYou can ensure it is identical to the known fingerprint of the server certificate to prevent a man-in-the-middle attack.</string>

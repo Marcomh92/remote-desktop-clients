@@ -37,6 +37,7 @@ docs/
 │   ├── INPUT_PIPELINE.md       mouse + keyboard + modifier-key flow (RDP focus)
 │   ├── CONNECTION_LIFECYCLE.md session start, framebuffer, disconnect, multi-instance
 │   ├── NATIVE_BRIDGE.md        JVM ↔ FreeRDP / SPICE JNI surface
+│   ├── FOREGROUND_SESSION_SERVICE.md `RemoteSessionService` foreground service: process holds foreground priority during an active remote-desktop session
 │   └── UI_SHELL.md             activities, settings, DB, layouts
 └── DECISIONS/                  ADRs (architecture decision records)
     ├── ADR-0001-multi-module-flavor-strategy.md
@@ -80,6 +81,7 @@ docs/
 | **`recomputeRdpViewport`** | RDP-only viewport owner (`RemoteCanvasActivity.java:1677-1708`). Single source of truth for `canvas.setVisibleDesktopHeight` and `rdpInputAreaContainer.setTranslationY` on RDP. Captures `rdpFullViewHeight` once when the IME is closed, computes usable viewport as `full − ime − container`, and positions the container above the IME via `imeOverlap = max(0, ime − (full − canvasH))` (one formula covers both window models). Called from the insets listener, the end of `relayoutViews` (RDP-gated), and `setInputAreaState` (RDP-gated). The legacy `relayoutViews` shrink block (`setVisibleDesktopHeight + relativePan`) is RDP-gated out. |
 | **Adaptive double-tap (RDP touchpad)** | RDP-only `TouchInputHandlerTouchpad` state machine: `onDoubleTap` arms a `PENDING` state and sends NOTHING; `onTouchEvent` `ACTION_MOVE` past half the touch slop commits a left-button press-and-drag (no preceding click); `ACTION_UP` without movement emits two `performTapClick` pairs (a true double-click). `onFling` returns false while `PENDING` or `DRAGGING`; `ACTION_CANCEL` releases the held button; `onLongPress` clears `PENDING`/`DRAGGING` (mutual exclusion with the synthesized right click). Replaces the round-2 "click-then-drag" behaviour that maximized title bars via Windows DBLCLK on the 2nd DOWN. |
 | **StrictMode** | `RemoteCanvasActivity.onCreate` calls `StrictMode.ThreadPolicy.permitAll()` because FreeRDP callbacks fire on native threads and would otherwise trip the bitmap-write detection. |
+| **`RemoteSessionService`** | `Service` subclass in `:bVNC` (`bVNC/src/main/java/com/iiordanov/bVNC/RemoteSessionService.java`) that promotes the process to a foreground service while a remote-desktop session is in flight. Started from `RemoteCanvasActivity.onCreate` (only when `connection.isReadyForConnection()`), stopped by `RemoteConnection.closeConnection` (single canonical close point) + `RemoteCanvasActivity.onDestroy` (defensive). Hosts an ongoing notification (channel `remote_session_service`, importance LOW) whose content intent returns the user to their live session. Inherited by all 8 wrapper APKs via manifest merge. See `features/FOREGROUND_SESSION_SERVICE.md`. |
 | **Strictly vendored** | `:remoteClientLib:jni:libs:deps:FreeRDP:client:Android:Studio:freeRDPCore` is in-tree (not a Git submodule). Do not edit; pull upstream and patch. |
 
 ---
@@ -88,7 +90,7 @@ docs/
 
 The aRDP flavor now ships the Microsoft RDP Android app's session UX: a software keyboard with a floating toggle, a modifier row above the IME with one-shot / lock semantics, a "123" extra-keys page replacing the IME, no black borders at minimum zoom (cover-scale clamp over the **physical** full-screen height), touchpad cursor acceleration + fling + right-click long-press, and an adaptive double-tap that disambiguates drag from double-click. VNC / SPICE / Opaque are byte-identical to the pre-RDP UX.
 
-Seven rounds of changes have landed:
+Eight rounds of changes have landed:
 
 | Round | Theme | Headline changes |
 |---|---|---|
@@ -135,6 +137,7 @@ Read `docs/features/INPUT_PIPELINE.md` for the canonical map. Key entry points:
 | **Predictive-back manifest opt-out** (round 6: targetSdk 36 + Android 13+ predictive-back killed `Activity.onBackPressed`; opt out so round-5 double-back logic runs) | `bVNC/src/main/AndroidManifest.xml:29` (`android:enableOnBackInvokedCallback="false"`); see ADR-0002. Inherited by all 8 wrappers. |
 | **Floating keyboard-toggle button restyle, round-6 delta** (40→32 dp, padding 5→4 dp, corners 13→10 dp, fill `#40000000`→`#33000000`) | `bVNC/src/main/res/layout/canvas.xml:156-157` + `layout-large/canvas.xml:156-157` (byte-identical); `bVNC/src/main/res/drawable/bg_keyboard_toggle.xml` |
 | **`:remoteClientLib` JUnit coverage** (round 6: 5 tests in `RemoteKeyboardStateTest.java`, modifier down/up + duplicate suppression + independence + Alt retention + read-only `isRemoteKeyDown`) | `remoteClientLib/build.gradle` adds `testImplementation 'junit:junit:4.13.2'`; `remoteClientLib/src/test/java/com/undatech/opaque/input/RemoteKeyboardStateTest.java` |
+| **Foreground session service** (round 8: cross-flavor session lifecycle, survives Android background-kill) | New `bVNC/src/main/java/com/iiordanov/bVNC/RemoteSessionService.java` (`extends android.app.Service`, `foregroundServiceType="dataSync"` declared in `bVNC/src/main/AndroidManifest.xml:95-98`); started from `RemoteCanvasActivity.onCreate:433` (only when `connection.isReadyForConnection()` at `:426`), right after `REINIT_SESSION` is posted, with the launching Intent's extras snapshotted into `private Bundle sessionLaunchExtras` at `:182` (assignment `:429`). Stopped by `RemoteConnection.closeConnection:315` (single canonical close point) + `RemoteCanvasActivity.onDestroy:1571` (defensive fallback). Notification channel `remote_session_service`, importance `IMPORTANCE_LOW` (no beep); stable `NOTIFICATION_ID = 0x52445353` ('RDSS'); content intent re-uses the original extras with `FLAG_ACTIVITY_SINGLE_TOP \| FLAG_ACTIVITY_CLEAR_TOP \| FLAG_ACTIVITY_NEW_TASK` + `ACTION_MAIN + CATEGORY_LAUNCHER`, wrapped in `FLAG_UPDATE_CURRENT \| FLAG_IMMUTABLE`. Three new permissions in `bVNC/src/main/AndroidManifest.xml:11-13` (`POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`) — inherited by all 8 wrappers via manifest merge; no per-flavor gating. Four new strings in `bVNC/src/main/res/values/strings.xml:369-372`. **Android 13+ runtime `POST_NOTIFICATIONS` prompt** lives in `RemoteCanvasActivity.startRemoteSessionService:1469-1486` + `notificationPermissionLauncher:187-205` — see `features/FOREGROUND_SESSION_SERVICE.md` §4.1. See PAT-017, INV-026. |
 
 ---
 

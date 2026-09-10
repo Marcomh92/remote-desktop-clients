@@ -33,7 +33,9 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.Manifest;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Rect;
@@ -69,6 +71,8 @@ import android.widget.Toast;
 
 import androidx.viewpager.widget.ViewPager;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
@@ -172,6 +176,33 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     private static final long DOUBLE_BACK_DISCONNECT_WINDOW_MS = 2000L;
     private long lastBackPressForDisconnect = 0;
     private int lastImeHeightPx = 0; // RDP IME inset height in px; 0 = IME closed
+    // Snapshot of the launching Intent's extras, captured in onCreate so the
+    // foreground-session notification's content intent can re-launch this same
+    // connection when the user taps the notification.
+    private Bundle sessionLaunchExtras;
+    // Runtime POST_NOTIFICATIONS prompt for Android 13+. The foreground service
+    // still runs even if the user denies this permission (Android keeps it
+    // active without the notification UI); on grant we re-issue startForeground
+    // so the notification posts.
+    private final ActivityResultLauncher<String> notificationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(),
+                    granted -> {
+                        if (granted) {
+                            // Permission just granted; restart the service so the
+                            // notification now posts. Bypass startRemoteSessionService
+                            // to avoid re-entering the permission check.
+                            String nickname = "";
+                            String address = "";
+                            if (connection != null) {
+                                nickname = connection.getNickname() != null
+                                        ? connection.getNickname() : "";
+                                address = connection.getAddress() != null
+                                        ? connection.getAddress() : "";
+                            }
+                            RemoteSessionService.start(this, sessionLaunchExtras,
+                                    nickname, address);
+                        }
+                    });
     int xPointerOffset = 0;
     int yPointerOffset = 0;
 
@@ -393,9 +424,13 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         remoteConnection = new RemoteConnectionFactory(this, connection, canvas, hideKeyboardAndExtraKeys).build();
 
         if (connection != null && connection.isReadyForConnection()) {
+            // Snapshot the launching Intent's extras so the foreground-session notification's
+            // content intent can re-launch this same connection when tapped.
+            sessionLaunchExtras = getIntent() != null ? getIntent().getExtras() : null;
             handler = new RemoteCanvasHandler(this, canvas, remoteConnection, connection, setModes);
             Log.d(TAG, "OnCreate - initializing session with a REINIT_SESSION message");
             handler.sendEmptyMessage(RemoteClientLibConstants.REINIT_SESSION);
+            startRemoteSessionService();
             continueConnecting();
         } else {
             showConnectionScreenOrExitIfNotReadyForConnecting(connection);
@@ -1423,6 +1458,33 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         Utils.justFinish(this);
     }
 
+    /**
+     * Promote the current process to a foreground service so the OS does not kill
+     * the in-flight RDP/SPICE/VNC/oVirt session when the user backgrounds the app
+     * or locks the device. The notification is dismissed by
+     * {@link RemoteConnection#closeConnection()} (single canonical close point,
+     * covers user- and remote-initiated disconnects) and defensively by
+     * {@link #onDestroy()}.
+     */
+    private void startRemoteSessionService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED) {
+            // Android 13+ requires POST_NOTIFICATIONS at runtime. The service still
+            // starts (foreground promotion + connection keepalive are independent
+            // of notification visibility); on grant the launcher callback above
+            // re-issues startForeground so the notification posts.
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        String nickname = "";
+        String address = "";
+        if (connection != null) {
+            nickname = connection.getNickname() != null ? connection.getNickname() : "";
+            address = connection.getAddress() != null ? connection.getAddress() : "";
+        }
+        RemoteSessionService.start(this, sessionLaunchExtras, nickname, address);
+    }
+
     public boolean setInputMode(int id) {
         TouchInputHandler input = getInputHandlerById(id);
         if (input != null) {
@@ -1502,6 +1564,11 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         }
         if (remoteConnection != null)
             remoteConnection.closeConnection();
+        // Defensive: if closeConnection was skipped (shouldn't happen, but the
+        // service would otherwise leak across the rare path where the activity
+        // is destroyed without a clean connection close), stop the foreground
+        // service directly. RemoteSessionService.stop is itself idempotent.
+        RemoteSessionService.stop(this);
         System.gc();
     }
 

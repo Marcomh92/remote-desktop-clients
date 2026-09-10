@@ -5,12 +5,16 @@
     android:versionCode="116490"
     android:versionName="v6.4.9">
 
-    <uses-permission tools:node="removeAll" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission-sdk-23 android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -92,5 +96,11 @@
                 <data android:pathPattern=".*\\.rdp"/>
             </intent-filter>
         </activity>
+
+        <service
+            android:name="com.iiordanov.bVNC.RemoteSessionService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
     </application>
 </manifest> 

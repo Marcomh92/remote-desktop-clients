@@ -305,6 +305,49 @@ Constants live at `bVNC/src/main/java/com/iiordanov/bVNC/Constants.java:178-179`
 
 ---
 
+## PAT-017 — Foreground service for an in-flight long-running session
+
+**Rule.** Long-running in-process tasks that must survive Android's background-kill (lock screen, app backgrounded, another window in front) get a `Service` subclass promoted to a foreground service. The pattern has three legs:
+
+1. **Single canonical start.** One Activity owns the `start` call, invoked from a foreground context (API 21+ → `startService`, API 26+ → `startForegroundService`). Subsequent calls only refresh the notification.
+2. **Single canonical stop.** One teardown method owns the `stop` call, and that method is the funnel for every disconnect path (user-initiated, remote-initiated, error-induced). A defensive second call from the most likely host teardown (typically `Activity.onDestroy`) is permitted because the stop is idempotent.
+3. **Stable notification.** Notification ID is hardcoded and never randomized per call (Android updates the existing slot in place). Channel importance `LOW` (or lower) so the ongoing notification does not beep when re-emitted. Content intent re-uses the original launching Intent's extras so tapping returns the user to the same task surface.
+
+**Why three legs.**
+- The canonical stop is the most violated: every disconnect path must reach it, or the service leaks. `RemoteConnection.closeConnection` is the existing single-funnel for all RDP disconnects (user, remote, error, re-init failure), so it is the right host for the stop call.
+- The defensive second call exists because `closeConnection` may be skipped on a rare Activity-destroy path; the stop is idempotent so calling it twice is safe.
+- The stable notification ID matters because Android deduplicates by `(channelId, notificationId)`. A randomized ID per start produces a stack of stale notifications.
+
+**API 26+ background-start guard.** `Service.stop` is invoked from places that may run while the host Activity is backgrounded. API 26+ throws `IllegalStateException` from `startService` in that case. The `stop` implementation wraps the dispatch in a `try { ... } catch (IllegalStateException) { log }` and swallows the expected failure — the service will already be stopped (or never started) by the time this runs.
+
+**Foreground-context requirement.** `startForegroundService` (API 26+) requires a foreground calling context, otherwise the service crashes on `startForeground` within 5 s. The Activity `onCreate` is always foreground, so it is the safe host. Do NOT call `start` from a background `Handler`, a worker thread, or a `BroadcastReceiver` without re-routing.
+
+**Why this matters.** The Microsoft RDP Android app and most production remote-desktop clients run an RDP session inside a foreground service for exactly this reason — the OS otherwise reclaims the process and the user is back at the launcher icon with their session terminated. Foreground priority holds the process alive and the persistent notification makes the session state visible.
+
+**Where (aRDP fork).**
+
+| Component | File | Notes |
+|---|---|---|
+| Service class | `bVNC/src/main/java/com/iiordanov/bVNC/RemoteSessionService.java` | `extends android.app.Service`, declared `foregroundServiceType="dataSync"`, `exported="false"` (`bVNC/src/main/AndroidManifest.xml:95-98`). Static `start(Context, Bundle, String, String)` and `stop(Context)` are the only public API. |
+| Notification channel | `remote_session_service`, importance `IMPORTANCE_LOW` | Created lazily on first start (`ensureChannel:129-142`). Channel id, name, description are hardcoded constants — do not randomize. |
+| Notification ID | `0x52445353` ('RDSS') | Stable across re-invocations so the slot is reused. |
+| Start call site | `RemoteCanvasActivity.onCreate:433` (after `REINIT_SESSION` at `:432`, only when `connection.isReadyForConnection()` at `:426`) | Launching Intent extras snapshotted into `private Bundle sessionLaunchExtras` at `:182` (assignment `:429`). |
+| Canonical stop call site | `RemoteConnection.closeConnection:315` (single canonical close point for user / remote / error disconnects) | Funnel verified at `RemoteCanvasActivity.disconnectAndFinishActivity:1456-1457` + `RemoteCanvasHandler.handleMessage` (`RDP_CONNECT_FAILURE` / `RDP_UNABLE_TO_CONNECT` / `RDP_AUTH_FAILED` → `showFatalMessageAndQuit` → `closeConnection`). |
+| Defensive stop call site | `RemoteCanvasActivity.onDestroy:1571` | Idempotent re-run after `closeConnection`. |
+| **Android 13+ `POST_NOTIFICATIONS` prompt** | `RemoteCanvasActivity.startRemoteSessionService:1469-1486` + `notificationPermissionLauncher:187-205` | Gated on `Build.VERSION.SDK_INT >= TIRAMISU` + `ContextCompat.checkSelfPermission(...) != PERMISSION_GRANTED`. The system dialog fires via `notificationPermissionLauncher.launch(...)` (`:1477`); the service **starts regardless of the prompt outcome** — the OS keeps the foreground service running without the notification UI on deny. The launcher callback (`:189-204`) re-issues `RemoteSessionService.start(...)` directly on grant (bypassing the helper to avoid re-entering the permission check). On API < 33 the permission is install-time; no prompt fires. See `features/FOREGROUND_SESSION_SERVICE.md` §4.1. |
+| Manifest inheritance | `:bVNC` library → all 8 wrapper APKs (`bVNC-app`, `freebVNC-app`, `aRDP-app`, `freeaRDP-app`, `aSPICE-app`, `freeaSPICE-app`, `Opaque-app`, `CustomVnc-app`) | No per-flavor gating. Permissions `POST_NOTIFICATIONS` / `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` declared in `:bVNC/AndroidManifest.xml:11-13` and merged into every wrapper. |
+
+**Invariant.** The service MUST be started in `RemoteCanvasActivity.onCreate` only after `connection.isReadyForConnection()` is true and MUST be stopped by `RemoteConnection.closeConnection` so every disconnect path is covered. The defensive `RemoteCanvasActivity.onDestroy` call exists only as a belt-and-braces fallback — see INV-026. The `POST_NOTIFICATIONS` prompt is optional: the service starts regardless, the prompt only governs whether the notification UI is visible.
+
+**Anti-patterns.**
+- Calling `start` from a background thread or `BroadcastReceiver` on API 26+ → `ForegroundServiceDidNotStartInTimeException` within 5 s.
+- Randomizing the notification ID per call → notification stack instead of one slot.
+- Setting channel importance to `IMPORTANCE_DEFAULT` / `IMPORTANCE_HIGH` → beeps on every re-emit.
+- Calling `stop` from a non-canonical path (e.g., a single UI button) → service leaks if any other path forgets to stop it.
+- Forgetting `PendingIntent.FLAG_IMMUTABLE` on API 31+ → `IllegalArgumentException` on `getActivity(...)`.
+
+---
+
 ## Pointer convention
 
 `docs/*.md` files use **repo-relative paths** (no leading `/`), backticks for filenames (`bVNC/src/main/java/com/...`). When pointing to a method, include the line range as `:startLine-endLine` to make agent-driven lookups trivial. Example: `RemoteRdpPointer.sendPointerEvent:107-134`.

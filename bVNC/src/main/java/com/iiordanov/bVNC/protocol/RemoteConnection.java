@@ -41,6 +41,7 @@ import com.iiordanov.bVNC.COLORMODEL;
 import com.iiordanov.bVNC.ClipboardMonitor;
 import com.iiordanov.bVNC.Constants;
 import com.iiordanov.bVNC.Decoder;
+import com.iiordanov.bVNC.RemoteSessionService;
 import com.iiordanov.bVNC.SSHConnection;
 import com.iiordanov.bVNC.Utils;
 import com.iiordanov.bVNC.input.KeyInputHandler;
@@ -307,6 +308,11 @@ abstract public class RemoteConnection implements PointerInputHandler, KeyInputH
             canvas.writeScreenshotToFile(context.getFilesDir() + "/" + connection.getScreenshotFilename(), 720);
         }
         onDestroy();
+
+        // Stop the foreground session service so the OS can release the
+        // wake-lock-style priority. Safe even when the Activity is already
+        // destroyed (the service handles the background-start exception).
+        RemoteSessionService.stop(context);
     }
 
     /**

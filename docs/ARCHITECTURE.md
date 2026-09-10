@@ -114,9 +114,11 @@ This is the central flow for upcoming work. See `docs/features/INPUT_PIPELINE.md
 
 | Step | Owner | File |
 |---|---|---|
-| User taps disconnect, or another window comes forward | `RemoteCanvasActivity.disconnectAndFinishActivity` | `RemoteCanvasActivity.java:1181` |
-| Tear down | `remoteConnection.closeConnection` — sets `maintainConnection=false`, calls `keyboard.clearMetaState` + dummy key-up, `rfbConn.close`, interrupts `connectionThread`, writes screenshot | `RemoteConnection.java:278` |
-| Activity destruction | `RemoteCanvasActivity.onDestroy` → `closeConnection` + `System.gc` | `RemoteCanvasActivity.java:1231` |
+| User taps disconnect, or another window comes forward | `RemoteCanvasActivity.disconnectAndFinishActivity` | `RemoteCanvasActivity.java:1456` |
+| Tear down | `remoteConnection.closeConnection` — sets `maintainConnection=false`, calls `keyboard.clearMetaState` + dummy key-up, `rfbConn.close`, interrupts `connectionThread`, writes screenshot, ends with `RemoteSessionService.stop(context)` | `RemoteConnection.java:279-316` |
+| Activity destruction | `RemoteCanvasActivity.onDestroy` → `closeConnection` + defensive `RemoteSessionService.stop(this)` + `System.gc` | `RemoteCanvasActivity.java:1556-1572` |
+
+The foreground session service started in `onCreate:433` (after `REINIT_SESSION`, only when `connection.isReadyForConnection()`) is the canonical answer to Android's background-kill of in-flight sessions; the service runs in `:bVNC` and is inherited by all 8 wrapper APKs. On Android 13+ the start helper also requests `POST_NOTIFICATIONS`; the service still starts regardless of the prompt outcome. See `features/FOREGROUND_SESSION_SERVICE.md` for the full lifecycle and `PATTERNS.md` PAT-017 for the cross-cutting shape.
 
 ---
 
