@@ -4,9 +4,7 @@ This directory contains bug reports for known issues in this codebase.
 
 ## Active Issues
 
-| ID | Title | Severity | Status |
-|---|---|---|---|
-| [BUG-002](BUG-002-cursor-under-soft-keyboard.md) | RDP-only: cursor travels underneath the soft keyboard instead of the viewport panning to follow it. Fix landed 2026-09-08; verify on device. | Medium — functional gap on aRDP only | FIXED (2026-09-08) |
+_None at the moment._
 
 
 ## Closed Issues
@@ -14,6 +12,8 @@ This directory contains bug reports for known issues in this codebase.
 | ID                                                                         | Title                                                                                 | Severity | Status | Date fixed |
 |----------------------------------------------------------------------------|---------------------------------------------------------------------------------------|----------|--------|------------|
 | [BUG-001](fixed/BUG-001-run-locked-bat-missing.md) | `run-locked.bat` was missing from the repo root; all documented build/test wrappers failed with `'run-locked.bat' is not recognized`. | High — breaks all build/test wrapper scripts | FIXED | 2026-09-08 |
+| [BUG-002](BUG-002-cursor-under-soft-keyboard.md) | RDP-only: cursor travels underneath the soft keyboard instead of the viewport panning to follow it. Fix landed 2026-09-08; verify on device. | Medium — functional gap on aRDP only | FIXED (2026-09-08) | 2026-09-08 |
+| [BUG-003](fixed/BUG-003-touchscreen-double-tap-slop.md) | Touchscreen double-tap rejected by stock `GestureDetector` slop (~8 dp); a real-finger double-tap frequently drifts above that and is misread as two single taps. Fix adds manual double-tap detection with a relaxed slop + two new global preferences (`doubleTapSlopDp`, `doubleTapTimeoutMs`). | Medium — affects every touchscreen user across all input modes and protocols | FIXED | 2026-09-10 |
 
 
 ## Severity Legend

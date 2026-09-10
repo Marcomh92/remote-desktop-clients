@@ -362,6 +362,18 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         }
         GeneralUtils.debugLog(debugLogging, TAG, "onDoubleTap, e: " + e);
 
+        // Defensive: clear any stale relaxed-slop buffer + flag so a future
+        // Android GestureDetector that routes the second UP through
+        // onSingleTapUp (instead of onDoubleTapEvent) doesn't make the base
+        // class fire notifyDoubleTap() on top of the state machine's
+        // emitDoubleTapDoubleClick(). Stock today uses onDoubleTapEvent, so
+        // this is belt-and-braces; cheap to keep.
+        stockDoubleTapFired = true;
+        if (bufferedSingleTapUp != null) {
+            bufferedSingleTapUp.recycle();
+            bufferedSingleTapUp = null;
+        }
+
         rdpDoubleTapDownX = e.getX();
         rdpDoubleTapDownY = e.getY();
         rdpDoubleTapPending = true;

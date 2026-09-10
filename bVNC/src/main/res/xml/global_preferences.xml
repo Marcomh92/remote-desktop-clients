@@ -64,6 +64,16 @@
         android:key="flingResistance"
         android:max="12"
         android:title="@string/fling_resistance" />
+    <SeekBarPreference
+        android:defaultValue="24"
+        android:key="doubleTapSlopDp"
+        android:max="48"
+        android:title="@string/double_tap_slop_dp" />
+    <SeekBarPreference
+        android:defaultValue="300"
+        android:key="doubleTapTimeoutMs"
+        android:max="800"
+        android:title="@string/double_tap_timeout_ms" />
     <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="disablePointerOffsetCalculation"

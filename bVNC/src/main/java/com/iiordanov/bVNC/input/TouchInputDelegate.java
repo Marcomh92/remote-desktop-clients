@@ -68,4 +68,18 @@ public interface TouchInputDelegate {
      * @return the height of the window decoration
      */
     int getyPointerOffset();
+
+    /**
+     * Maximum distance (dp) between two taps' UP positions that still count
+     * as a double-tap. Relaxed from stock GestureDetector slop so a real
+     * human-finger double-tap (which routinely drifts more than ~8 dp)
+     * registers reliably.
+     */
+    int getDoubleTapSlopDp();
+
+    /**
+     * Maximum time (ms) between two taps' UP positions that still count as a
+     * double-tap. Replaces stock GestureDetector timeout.
+     */
+    int getDoubleTapTimeoutMs();
 }

@@ -762,6 +762,16 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
         return yPointerOffset;
     }
 
+    @Override
+    public int getDoubleTapSlopDp() {
+        return Utils.querySharedPreferencesInt(this, Constants.doubleTapSlopDp, Constants.DEFAULT_DOUBLE_TAP_SLOP_DP);
+    }
+
+    @Override
+    public int getDoubleTapTimeoutMs() {
+        return Utils.querySharedPreferencesInt(this, Constants.doubleTapTimeoutMs, Constants.DEFAULT_DOUBLE_TAP_TIMEOUT_MS);
+    }
+
     private void initializeExtraKeysView() {
         extraKeysToolbar = findViewById(R.id.extraKeysToolbar);
         float extraKeysAlpha = Color.alpha(ContextCompat.getColor(this, R.color.extra_keys_background)) / 255f;
@@ -917,6 +927,14 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             }
             if (touchInputHandler != null && touchInputHandler instanceof TouchInputHandlerTouchpad) {
                 ((TouchInputHandlerTouchpad) touchInputHandler).setFlingDamp(getFlingResistanceDamp());
+            }
+            // Push the relaxed-slop double-tap prefs so a mid-session slider
+            // change in Settings takes effect without reopening the connection
+            // (matches the setFlingDamp pattern above).
+            if (touchInputHandler != null) {
+                int slopPx = (int) (getDoubleTapSlopDp() * canvas.getDisplayDensity() + 0.5f);
+                touchInputHandler.setDoubleTapSlopPx(slopPx);
+                touchInputHandler.setDoubleTapTimeoutMs(getDoubleTapTimeoutMs());
             }
             // Re-apply runtime row sizing so pref changes made via the
             // Settings screen mid-session take effect without reconnecting.
@@ -1266,6 +1284,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 if (inputModeHandlers[i] instanceof TouchInputHandlerTouchpad) {
                     ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setFlingDamp(getFlingResistanceDamp());
                 }
+                // Same push as the onResume block above, but applied to every
+                // pre-built input-mode handler so a switch between modes
+                // doesn't carry stale defaults from ctor-time prefs.
+                int slopPx = (int) (getDoubleTapSlopDp() * canvas.getDisplayDensity() + 0.5f);
+                inputModeHandlers[i].setDoubleTapSlopPx(slopPx);
+                inputModeHandlers[i].setDoubleTapTimeoutMs(getDoubleTapTimeoutMs());
                 return inputModeHandlers[i];
             }
         }

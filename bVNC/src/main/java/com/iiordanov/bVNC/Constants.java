@@ -175,6 +175,8 @@ public class Constants {
     public static final String edgeThresholdDp = "edgeThresholdDp";
     public static final String mouseAccelerationStrength = "mouseAccelerationStrength";
     public static final String flingResistance = "flingResistance";
+    public static final String doubleTapSlopDp = "doubleTapSlopDp";
+    public static final String doubleTapTimeoutMs = "doubleTapTimeoutMs";
     public static final String rdpModifierKeyHeightDp = "rdpModifierKeyHeightDp";
     public static final String rdpModifierKeySizeDp = "rdpModifierKeySizeDp";
     public static final String localToRemoteClipboardIntegration = "localToRemoteClipboardIntegration";
@@ -196,6 +198,10 @@ public class Constants {
     public static final int DEFAULT_EDGE_THRESHOLD_DP = 35;
     public static final int DEFAULT_MOUSE_ACCELERATION_STRENGTH = 10;
     public static final int DEFAULT_FLING_RESISTANCE = 6;
+    /** Maximum distance (dp) between two taps' UP positions that still count as a double-tap. ~3x stock GestureDetector slop. */
+    public static final int DEFAULT_DOUBLE_TAP_SLOP_DP = 24;
+    /** Maximum time (ms) between two taps' UP positions that still count as a double-tap. Matches stock GestureDetector timeout. */
+    public static final int DEFAULT_DOUBLE_TAP_TIMEOUT_MS = 300;
     public static final int DEFAULT_RDP_MODIFIER_KEY_HEIGHT_DP = 27;
     public static final int DEFAULT_RDP_MODIFIER_KEY_SIZE_DP = 42;
 

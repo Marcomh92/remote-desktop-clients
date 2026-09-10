@@ -29,4 +29,17 @@ public interface TouchInputHandler {
     String getDescription();
 
     String getId();
+
+    /**
+     * Updates the relaxed-slop distance (px) used by the manual double-tap
+     * detector. Called when the Double-Tap Slop preference changes so a
+     * mid-session slider move takes effect without reopening the connection.
+     */
+    void setDoubleTapSlopPx(int slopPx);
+
+    /**
+     * Updates the relaxed-slop timeout (ms) used by the manual double-tap
+     * detector. See {@link #setDoubleTapSlopPx(int)}.
+     */
+    void setDoubleTapTimeoutMs(int timeoutMs);
 }
