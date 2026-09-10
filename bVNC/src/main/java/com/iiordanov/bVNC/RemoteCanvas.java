@@ -1046,39 +1046,73 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
         }
         int[] pixels = new int[width * height];
         // MS-RDPBCGR §2.2.9.1.1.4: AND/XOR masks are stored bottom-up in the
-        // wire cache. Compute sy = height - 1 - y for the mask offset when
-        // writing into `pixels`, then `y` itself indexes pixels top-down.
+        // wire cache for color cursors (xorBpp >= 24). For the legacy
+        // mono-pointer TS_PTRMSG_TYPE_POINTER path (xorBpp == 1), rows are
+        // top-down (FreeRDP's vFlip is FALSE in
+        // freerdp_image_copy_from_pointer_data_1bpp when xorBpp == 1).
         // AND-mask scanlines are 2-byte aligned on the wire (stride =
         // (((width+7)/8) + 1) & ~1), not (width+7)/8; widths 16/32 happen
-        // to fit, widths 24+ misread otherwise. XOR-mask rows are tight
-        // packed per xorBpp for 32bpp and similar (we expand to ARGB below).
+        // to fit, widths 24+ misread otherwise. XOR-mask rows for color
+        // cursors are tight packed per xorBpp; we expand to ARGB below.
         int andStride = (((width + 7) / 8) + 1) & ~1;
+        // AND mask convention — matches libfreerdp/codec/color.c:377-384:
+        //   AND=0, XOR=0 → opaque black  (cursor body fill)
+        //   AND=0, XOR=1 → opaque white  (cursor border / filled variant)
+        //   AND=1, XOR=0 → transparent   (don't draw cursor here)
+        //   AND=1, XOR=1 → opaque "screen-inverted"; we approximate as black
+        //     (no screen sampling available) so the I-beam shaft and hand-grab
+        //     fill render as a solid body against most backgrounds.
+        // The old decoder mapped AND=1 → transparent, which made cursors
+        // whose body pixels sit at AND=1 (notably the Windows I-beam) vanish
+        // on white-on-white textfields.
 
         if (xorBpp == 32) {
+            /* Color cursor. Match libfreerdp/codec/color.c:469-514 exactly:
+             *   AND=0  → show XOR pixel (BGRA → ARGB32).
+             *   AND=1, pixel opaque black  → transparent (XOR is at AND=1 to make
+             *     the cursor body region pass through to the desktop).
+             *   AND=1, pixel opaque white  → "screen-inverted" approximation:
+             *     FreeRDP's freerdp_image_inverted_pointer_color is a checkerboard
+             *     ((x+y)&1 ? black : white); we approximate as solid black to keep
+             *     the cursor visible without screen sampling.
+             *   AND=1, other pixels        → leave as-is (anti-alias edges).
+             * vFlip is TRUE for xorBpp != 1 (rows arrive bottom-up). */
+            int xorRowStride = width * 4;
             for (int y = 0; y < height; y++) {
                 int sy = height - 1 - y;
-                int xorRowOff = sy * width * 4;
+                int xorRowOff = sy * xorRowStride;
                 for (int x = 0; x < width; x++) {
                     int idx = y * width + x;
                     int xorOff = xorRowOff + x * 4;
                     if (xorMask == null || xorOff + 3 >= xorMask.length) {
-                        pixels[idx] = 0; /* not enough data */
+                        pixels[idx] = 0;
                         continue;
                     }
                     int b = xorMask[xorOff] & 0xff;
                     int g = xorMask[xorOff + 1] & 0xff;
                     int r = xorMask[xorOff + 2] & 0xff;
                     int a = xorMask[xorOff + 3] & 0xff;
-                    pixels[idx] = (a << 24) | (r << 16) | (g << 8) | b;
+                    int pixel = (a << 24) | (r << 16) | (g << 8) | b;
                     if (andBit(andMask, x, sy, andStride) != 0) {
-                        pixels[idx] = 0;
+                        if ((pixel & 0x00ffffff) == 0 && a != 0)
+                            pixels[idx] = 0;             /* opaque black → transparent */
+                        else if (pixel == 0xffffffff)
+                            pixels[idx] = 0xff000000;    /* opaque white → opaque black (inverted) */
+                        else
+                            pixels[idx] = pixel;        /* anti-alias etc. — keep as-is */
+                    } else {
+                        pixels[idx] = pixel;
                     }
                 }
             }
         } else if (xorBpp == 24) {
+            /* Same convention as 32bpp, but the wire has no alpha channel:
+             * every pixel is opaque, so AND=1+opaque-black always becomes
+             * transparent (no anti-alias edges pass through). */
+            int xorRowStride = width * 3;
             for (int y = 0; y < height; y++) {
                 int sy = height - 1 - y;
-                int xorRowOff = sy * width * 3;
+                int xorRowOff = sy * xorRowStride;
                 for (int x = 0; x < width; x++) {
                     int idx = y * width + x;
                     int xorOff = xorRowOff + x * 3;
@@ -1089,33 +1123,71 @@ public class RemoteCanvas extends AppCompatImageView implements Viewable {
                     int b = xorMask[xorOff] & 0xff;
                     int g = xorMask[xorOff + 1] & 0xff;
                     int r = xorMask[xorOff + 2] & 0xff;
-                    pixels[idx] = 0xff000000 | (r << 16) | (g << 8) | b;
+                    int pixel = 0xff000000 | (r << 16) | (g << 8) | b;
                     if (andBit(andMask, x, sy, andStride) != 0) {
-                        pixels[idx] = 0;
+                        if ((pixel & 0x00ffffff) == 0)
+                            pixels[idx] = 0;             /* opaque black → transparent */
+                        else if (pixel == 0xffffffff)
+                            pixels[idx] = 0xff000000;    /* opaque white → opaque black */
+                        else
+                            pixels[idx] = pixel;
+                    } else {
+                        pixels[idx] = pixel;
                     }
                 }
             }
         } else {
-            /* Legacy monochrome cursors (xorBpp in {1, 4, 8, 16}). Render
-             * XOR=1 as opaque white, XOR=0 as opaque black, AND=1 as
-             * transparent. This matches what a typical Windows RDP server
-             * sends for the resize, hand, I-beam, etc. */
+            /* Legacy mono cursor (TS_PTRMSG_TYPE_POINTER with xorBpp==1).
+             * Rows are stored top-down (no vflip — FreeRDP sets vFlip=FALSE
+             * for xorBpp==1 in freerdp_image_copy_from_pointer_data_1bpp).
+             * Apply the AND/XOR truth table from libfreerdp/codec/color.c. */
             int xorStride = (width + 7) / 8;
             for (int y = 0; y < height; y++) {
-                int sy = height - 1 - y;
+                int sy = y; /* no vflip for xorBpp == 1 */
                 for (int x = 0; x < width; x++) {
                     int idx = y * width + x;
-                    if (andBit(andMask, x, sy, andStride) != 0) {
-                        pixels[idx] = 0; /* transparent */
-                    } else if (xorBit(xorMask, x, sy, xorStride) != 0) {
-                        pixels[idx] = 0xffffffff; /* white */
-                    } else {
-                        pixels[idx] = 0xff000000; /* black */
-                    }
+                    int andPixel = andBit(andMask, x, sy, andStride);
+                    int xorPixel = xorBit(xorMask, x, sy, xorStride);
+                    if (andPixel == 0 && xorPixel == 0)
+                        pixels[idx] = 0xff000000;        /* black */
+                    else if (andPixel == 0 && xorPixel != 0)
+                        pixels[idx] = 0xffffffff;        /* white */
+                    else if (andPixel != 0 && xorPixel == 0)
+                        pixels[idx] = 0;                 /* transparent */
+                    else /* andPixel != 0 && xorPixel != 0 */
+                        pixels[idx] = 0xff000000;        /* opaque black ≈ "screen-inverted" */
                 }
             }
         }
         setSoftCursorRectAndPixels(width, height, hotspotX, hotspotY, pixels);
+        // Diagnostic dump for small cursors (≤ 64 wide): count opaque/black/white/transparent
+        // pixels and print the first row as a bitmap. Lets us tell whether the host sent a
+        // filled body, an outline, or a fully-transparent bitmap for things like the I-beam.
+        if (width <= 64 && height <= 64) {
+            int opaque = 0, black = 0, white = 0, transparent = 0;
+            for (int i = 0; i < pixels.length; i++) {
+                int p = pixels[i];
+                int a = (p >>> 24) & 0xff;
+                int r = (p >>> 16) & 0xff, g = (p >>> 8) & 0xff, b = p & 0xff;
+                if (a == 0) { transparent++; continue; }
+                opaque++;
+                if (r == 0 && g == 0 && b == 0) black++;
+                else if (r == 0xff && g == 0xff && b == 0xff) white++;
+            }
+            StringBuilder firstRow = new StringBuilder();
+            for (int x = 0; x < width && x < 48; x++) {
+                int p = pixels[x];
+                int a = (p >>> 24) & 0xff;
+                if (a == 0) firstRow.append('.');
+                else if ((p & 0x00ffffff) == 0) firstRow.append('#');
+                else if (p == 0xffffffff) firstRow.append('O');
+                else firstRow.append('?');
+            }
+            Log.i(TAG_CURSOR_DECODE, "decoded " + width + "x" + height
+                    + " opaque=" + opaque + " black=" + black + " white=" + white
+                    + " transparent=" + transparent
+                    + " | first-row: \"" + firstRow + "\"");
+        }
         // Force a redraw of the cursor region: on a static framebuffer (the
         // user's exact complaint: hover over a window edge with no other
         // animated pixels nearby) the new bitmap would otherwise sit there
