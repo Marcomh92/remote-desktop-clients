@@ -127,7 +127,12 @@ public class RemoteRdpPointer extends RemotePointer {
         if (canvas != null) {
             canvas.invalidateMousePosition();
             setNewPointerPosition(x, y);
-            protocomm.writePointerEvent(pointerX, pointerY, combinedMetaState, MOUSE_BUTTON_MOVE | pointerMask, false);
+            // Send the MOUSE_BUTTON_MOVE-flagged event first only when it differs from pointerMask.
+            // If pointerMask already contains MOUSE_BUTTON_MOVE, the two writes would be byte-identical
+            // duplicates, so emit just the single pointerMask event.
+            if ((pointerMask & MOUSE_BUTTON_MOVE) == 0) {
+                protocomm.writePointerEvent(pointerX, pointerY, combinedMetaState, MOUSE_BUTTON_MOVE | pointerMask, false);
+            }
             protocomm.writePointerEvent(pointerX, pointerY, combinedMetaState, pointerMask, false);
             canvas.invalidateMousePosition();
         }

@@ -22,17 +22,20 @@ package com.iiordanov.bVNC.input;
 import com.undatech.opaque.Viewable;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.os.Build;
 import android.os.SystemClock;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
+import android.view.ViewConfiguration;
 
 import androidx.annotation.NonNull;
 import androidx.core.view.InputDeviceCompat;
 
 import com.iiordanov.bVNC.Constants;
 import com.undatech.opaque.InputCarriable;
+import com.undatech.opaque.input.DoubleTapPairTracker;
 import com.undatech.opaque.util.GeneralUtils;
 
 import java.util.LinkedList;
@@ -106,26 +109,31 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
     // Queue which holds the last two MotionEvents which triggered onScroll
     Queue<Float> distXQueue;
     Queue<Float> distYQueue;
-    // Maximum distance (px) between two taps' UP positions that still count
-    // as a double-tap, when the stock GestureDetector has rejected the pair
-    // (outside getScaledDoubleTapSlop). Read from the global preference
-    // doubleTapSlopDp and converted via displayDensity. See BUG-003.
+    // Relaxed double-tap slop (px) fed to doubleTapTracker: the user's
+    // doubleTapSlopDp preference converted via displayDensity, floored at the
+    // framework's getScaledDoubleTapSlop(). See BUG-003.
     int doubleTapSlopPx = 0;
-    // Maximum time (ms) between two taps' UP positions that still count as
-    // a double-tap. Read from the global preference doubleTapTimeoutMs.
+    // Relaxed double-tap timeout (ms) fed to doubleTapTracker, floored at the
+    // framework's getDoubleTapTimeout().
     int doubleTapTimeoutMs = 0;
-    // True between a stock-fired onDoubleTap() and the next onSingleTapUp(),
-    // so the manual relaxed-slop detector knows not to also fire a double-click
-    // (stock already did). Reset on every onSingleTapUp().
+    // Detects double-taps with relaxed slop/timeout from raw DOWN/UP events
+    // (stock GestureDetector's own double-tap only accepts within
+    // getScaledDoubleTapSlop, which real fingers routinely exceed). Fed for
+    // the primary pointer only; see onTouchEvent.
+    protected DoubleTapPairTracker doubleTapTracker;
+    // ViewConfiguration snapshotted once for the tracker's framework floors.
+    private final ViewConfiguration viewConfiguration;
+    // True when the stock detector's onDoubleTap() fired during the current
+    // gesture dispatch. Reset at the start of every primary ACTION_DOWN
+    // dispatch, set in onDoubleTap() (base and overrides). Checked right after
+    // the detector feed so a pair accepted by stock is not also reported by
+    // the manual tracker.
     protected boolean stockDoubleTapFired = false;
     // True between a manual-relaxed-slop double-tap and the stock-fired
     // onSingleTapConfirmed() that would otherwise fire UP2 as a single click
-    // ~300 ms later (giving 4 clicks instead of 2). Reset on every onSingleTapUp().
+    // ~300 ms later (giving 4 clicks instead of 2). Reset on every primary
+    // ACTION_DOWN (a new gesture cancels stock's own pending onSingleTapConfirmed).
     protected boolean suppressNextSingleTapConfirmed = false;
-    // Last onSingleTapUp() event, retained for relaxed-slop double-tap detection.
-    // Recycled when overwritten. Owned by us (created via MotionEvent.obtain()).
-    protected MotionEvent bufferedSingleTapUp = null;
-    protected long bufferedSingleTapUpTime = 0;
 
     TouchInputHandlerGeneric(TouchInputDelegate touchInputDelegate, Viewable viewable, InputCarriable remoteInput,
                              boolean debugLogging, float scrollRate) {
@@ -151,17 +159,26 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
 
         displayDensity = viewable.getDisplayDensity();
 
+        // Snapshot ViewConfiguration via the Context so the framework floors
+        // below work on all API levels (the static scaled methods need API 34).
+        Context context = viewable.getContext();
+        viewConfiguration = ViewConfiguration.get(context);
+
         // Relaxed double-tap slop/timeout. Stock GestureDetector rejects the
-        // second tap when it drifts more than getScaledDoubleTapSlop() (~8 dp)
-        // from the first tap's UP; a real-finger double-tap routinely drifts
-        // above that and is misread as two single taps. See BUG-003.
+        // second tap when it drifts more than getScaledDoubleTapSlop() from the
+        // first tap's UP; a real-finger double-tap routinely drifts above that
+        // and is misread as two single taps. See BUG-003.
         // Floor both at the stock GestureDetector values so the user can never
         // disable the manual detector entirely via the sliders — minimum is
         // "system default behaviour", not "no double-tap ever".
         this.doubleTapSlopPx = Math.max(
-                (int) (touchInputDelegate.getDoubleTapSlopDp() * displayDensity + 0.5f),
-                (int) (8 * displayDensity + 0.5f));
-        this.doubleTapTimeoutMs = Math.max(touchInputDelegate.getDoubleTapTimeoutMs(), 100);
+                Math.round(touchInputDelegate.getDoubleTapSlopDp() * displayDensity),
+                viewConfiguration.getScaledDoubleTapSlop());
+        this.doubleTapTimeoutMs = Math.max(
+                touchInputDelegate.getDoubleTapTimeoutMs(),
+                viewConfiguration.getDoubleTapTimeout());
+        this.doubleTapTracker = new DoubleTapPairTracker(
+                doubleTapSlopPx, doubleTapTimeoutMs, viewConfiguration.getScaledTouchSlop());
 
         distXQueue = new LinkedList<>();
         distYQueue = new LinkedList<>();
@@ -176,12 +193,12 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
     /**
      * Updates the relaxed-slop distance (px) used by the manual double-tap
      * detector. Called by the activity when the Double-Tap Slop preference
-     * changes; the next gesture picks up the new value (and any pending
-     * tap-state is cleared so stale buffer data doesn't leak across the
-     * slider move).
+     * changes; the tracker is reconfigured with the same framework floor and
+     * reset so a stale half-pair doesn't survive the slider move.
      */
     public void setDoubleTapSlopPx(int slopPx) {
-        this.doubleTapSlopPx = Math.max(slopPx, (int) (8 * displayDensity + 0.5f));
+        this.doubleTapSlopPx = Math.max(slopPx, viewConfiguration.getScaledDoubleTapSlop());
+        doubleTapTracker.setSlopPx(doubleTapSlopPx);
         resetDoubleTapState();
     }
 
@@ -190,18 +207,15 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
      * detector. See {@link #setDoubleTapSlopPx(int)} for the reset rationale.
      */
     public void setDoubleTapTimeoutMs(int timeoutMs) {
-        this.doubleTapTimeoutMs = Math.max(timeoutMs, 100);
+        this.doubleTapTimeoutMs = Math.max(timeoutMs, viewConfiguration.getDoubleTapTimeout());
+        doubleTapTracker.setTimeoutMs(doubleTapTimeoutMs);
         resetDoubleTapState();
     }
 
-    /** Clears any pending relaxed-slop buffer / suppression state. */
+    /** Clears the per-gesture stock double-tap / click-suppression flags. */
     private void resetDoubleTapState() {
         stockDoubleTapFired = false;
         suppressNextSingleTapConfirmed = false;
-        if (bufferedSingleTapUp != null) {
-            bufferedSingleTapUp.recycle();
-            bufferedSingleTapUp = null;
-        }
     }
 
     /**
@@ -377,10 +391,11 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
      */
     @Override
     public boolean onSingleTapConfirmed(@NonNull MotionEvent e) {
-        // Suppressed when the manual relaxed-slop detector in onSingleTapUp has
-        // already emitted a double-click for the second tap of this pair:
-        // otherwise stock would fire this single click ~300 ms after UP2 and
-        // we'd end up with 4 clicks (two-raw-clicks + one-singles-tap-confirmed).
+        // Suppressed when the manual relaxed-slop detector (raw DOWN/UP tracking
+        // in doubleTapTracker, feeding onManualDoubleTap) has already emitted a
+        // double-click for the second tap of this pair: otherwise stock would
+        // fire this single click ~300 ms after UP2 and we'd end up with 4 clicks
+        // (two-raw-clicks + one-singles-tap-confirmed).
         if (suppressNextSingleTapConfirmed) {
             suppressNextSingleTapConfirmed = false;
             return true;
@@ -402,7 +417,8 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
     /**
      * Fires when a double-tap is confirmed — either by the stock GestureDetector
      * (via {@link #onDoubleTap(MotionEvent)}) or by the manual relaxed-slop
-     * detector (via {@link #onSingleTapUp(MotionEvent)}). Default behaviour is
+     * detector (raw DOWN/UP tracking in {@link #onTouchEvent(MotionEvent)}
+     * feeding {@link #onManualDoubleTap(MotionEvent)}). Default behaviour is
      * two single clicks back-to-back; subclasses may override. The RDP adaptive
      * drag-rerouting in {@link TouchInputHandlerTouchpad} takes a different path
      * entirely (its own {@code onDoubleTap} override arms
@@ -427,70 +443,52 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
     @Override
     public boolean onDoubleTap(MotionEvent e) {
         GeneralUtils.debugLog(debugLogging, TAG, "onDoubleTap, e: " + e);
-        // Stock accepted this pair (within getScaledDoubleTapSlop). Tell the
-        // manual relaxed-slop detector not to also fire for it, and clear the
-        // buffer so the next onSingleTapUp() doesn't compare against UP1.
+        // Stock accepted this pair (within getScaledDoubleTapSlop). Records the
+        // per-dispatch flag so the manual tracker path, evaluated right after
+        // the detector feed in onTouchEvent, does not report the same pair too.
         stockDoubleTapFired = true;
-        if (bufferedSingleTapUp != null) {
-            bufferedSingleTapUp.recycle();
-            bufferedSingleTapUp = null;
-        }
         notifyDoubleTap(e);
         return true;
     }
 
     /**
+     * Double-tap detected by the raw-event {@link #doubleTapTracker} with the
+     * relaxed slop/timeout (stock rejected the pair). Base behaviour mirrors
+     * {@link #notifyDoubleTap(MotionEvent)} and additionally sets
+     * {@link #suppressNextSingleTapConfirmed} so the stock
+     * onSingleTapConfirmed() scheduled for the second UP does not fire the pair
+     * again ~300 ms later (4 clicks instead of 2). Subclasses may override to
+     * route into their own double-tap gesture handling; overrides must keep the
+     * suppression flag set (or otherwise consume the pair) and must not call
+     * {@code super} unless they want the two-click default as well.
+     *
+     * @param secondDown the second tap's ACTION_DOWN event.
+     */
+    protected void onManualDoubleTap(MotionEvent secondDown) {
+        GeneralUtils.debugLog(debugLogging, TAG, "onManualDoubleTap, e: " + secondDown);
+        suppressNextSingleTapConfirmed = true;
+        notifyDoubleTap(secondDown);
+    }
+
+    /**
      * @see android.view.GestureDetector.SimpleOnGestureListener#onSingleTapUp(android.view.MotionEvent)
      *
-     * <p>Fires on every UP that isn't a long-press, before the stock detector
-     * decides single-vs-double. We buffer each UP and, on the next UP within
-     * {@link #doubleTapTimeoutMs} and within {@link #doubleTapSlopPx}, treat
-     * it as a double-tap (calling {@link #notifyDoubleTap}). This catches the
-     * pair only when stock has already rejected it (because stock's own
-     * {@code onDoubleTap} would have already fired the click via the path
-     * above).
+     * <p>Double-tap detection has moved to {@link #doubleTapTracker}, fed from
+     * raw DOWN/UP events in {@link #onTouchEvent(MotionEvent)}; this callback
+     * no longer buffers or matches taps (the old UP-vs-UP comparison could
+     * never fire for pairs stock had rejected, see BUG-003).
      */
     @Override
     public boolean onSingleTapUp(@NonNull MotionEvent e) {
         GeneralUtils.debugLog(debugLogging, TAG, "onSingleTapUp, e: " + e);
-        long now = SystemClock.uptimeMillis();
-        boolean isMatch = bufferedSingleTapUp != null
-                && (now - bufferedSingleTapUpTime) <= doubleTapTimeoutMs
-                && distancePx(e, bufferedSingleTapUp) <= doubleTapSlopPx;
-        if (isMatch && !stockDoubleTapFired) {
-            // Stock rejected the pair (drift > getScaledDoubleTapSlop); accept
-            // it via the user's relaxed slop. Set the suppression flag so the
-            // stock onSingleTapConfirmed() scheduled for UP2 does not also fire
-            // a single click ~300 ms later (would yield 4 clicks total).
-            // Clear the buffer so a follow-up tap starts a fresh pair rather
-            // than chaining into another double-click (would yield 4 clicks
-            // on a sloppy triple-tap, see BUG-003).
-            suppressNextSingleTapConfirmed = true;
-            notifyDoubleTap(e);
-            if (bufferedSingleTapUp != null) {
-                bufferedSingleTapUp.recycle();
-            }
-            bufferedSingleTapUp = null;
-        } else {
-            // New single tap (or buffered pair was already handled by stock).
-            // Clear the suppression flag in case it was left over from a prior
-            // gesture that never completed (defensive — stock cancels its own
-            // pending onSingleTapConfirmed when a new tap begins).
-            suppressNextSingleTapConfirmed = false;
-            if (bufferedSingleTapUp != null) {
-                bufferedSingleTapUp.recycle();
-            }
-            bufferedSingleTapUp = MotionEvent.obtain(e);
-            bufferedSingleTapUpTime = now;
-        }
-        stockDoubleTapFired = false;
+        // NOTE: suppressNextSingleTapConfirmed is intentionally NOT cleared
+        // here. This callback fires on the second tap's UP, before the stock
+        // onSingleTapConfirmed() scheduled for that UP arrives (~300 ms later);
+        // clearing the flag here would let it through and restore the 4-click
+        // bug. The flag's reset lives at the start of the primary ACTION_DOWN
+        // dispatch in onTouchEvent, which also cancels stock's pending
+        // onSingleTapConfirmed for that earlier tap.
         return false;
-    }
-
-    private static float distancePx(MotionEvent a, MotionEvent b) {
-        float dx = a.getX() - b.getX();
-        float dy = a.getY() - b.getY();
-        return (float) Math.sqrt(dx * dx + dy * dy);
     }
 
     /**
@@ -499,6 +497,10 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
     @Override
     public void onLongPress(MotionEvent e) {
         GeneralUtils.debugLog(debugLogging, TAG, "onLongPress, e: " + e);
+
+        // A long-press is never a tap: drop any half-recorded tap pair so a
+        // later tap cannot pair up with this gesture's UP.
+        doubleTapTracker.reset();
 
         int metaState = e.getMetaState();
 
@@ -611,6 +613,13 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
                         dragX = e.getX();
                         dragY = e.getY();
 
+                        // New gesture dispatch: reset the per-dispatch stock
+                        // double-tap flag and any leftover click suppression
+                        // (stock cancels its own pending onSingleTapConfirmed
+                        // when a new tap begins). The tracker's own ACTION_DOWN
+                        // handling lives after the pointer switch below.
+                        resetDoubleTapState();
+
                         // Detect whether this is potentially the start of a gesture to show the nav bar.
                         detectImmersiveSwipe(dragY);
                         break;
@@ -707,8 +716,38 @@ abstract class TouchInputHandlerGeneric extends GestureDetector.SimpleOnGestureL
                 break;
         }
 
+        // Relaxed double-tap tracker: fed with RAW DOWN/UP events of the
+        // primary pointer only (multi-touch gestures are owned elsewhere).
+        // Placed after the pointer switch above but before the detector feeds.
+        // ACTION_UP calls onActionUp() first — the tracker only records
+        // tap-like releases, so the stock feed can't be confused by it, and
+        // the feed below still sees the same event the handler just processed.
+        // A second pointer going down, or CANCEL, drops any half-recorded pair.
+        boolean completesPair = false;
+        if (pointerID == 0) {
+            if (action == MotionEvent.ACTION_DOWN) {
+                completesPair = doubleTapTracker.onActionDown(
+                        e.getX(), e.getY(), e.getEventTime());
+            } else if (action == MotionEvent.ACTION_UP) {
+                doubleTapTracker.onActionUp(e.getX(), e.getY(), e.getEventTime());
+            } else if (action == MotionEvent.ACTION_CANCEL) {
+                doubleTapTracker.reset();
+            }
+        } else if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            // A second pointer landed: this is a multi-touch gesture, not a tap.
+            doubleTapTracker.reset();
+        }
+
         scalingGestureDetector.onTouchEvent(e);
-        return gestureDetector.onTouchEvent(e);
+        boolean stockHandled = gestureDetector.onTouchEvent(e);
+
+        // AFTER the stock feed, so the stock detector's own onDoubleTap() (if
+        // any) has already set stockDoubleTapFired: a pair stock accepted must
+        // not also fire the manual hook.
+        if (completesPair && !stockDoubleTapFired && e.getPointerCount() == 1) {
+            onManualDoubleTap(e);
+        }
+        return stockHandled;
     }
 
     /**

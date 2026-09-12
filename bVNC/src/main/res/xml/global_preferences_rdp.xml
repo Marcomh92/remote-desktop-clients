@@ -12,4 +12,22 @@
         android:key="rdpModifierKeySizeDp"
         android:max="72"
         android:title="@string/rdp_modifier_key_size_dp" />
+    <SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="rdpPointerAccelEnabled"
+        android:title="@string/rdp_pointer_accel_enabled" />
+    <SeekBarPreference
+        android:defaultValue="100"
+        android:key="rdpPointerAccelLowGainPct"
+        android:max="300"
+        android:title="@string/rdp_pointer_accel_low_gain_pct" />
+    <SeekBarPreference
+        android:defaultValue="300"
+        android:key="rdpPointerAccelHighGainPct"
+        android:max="600"
+        android:title="@string/rdp_pointer_accel_high_gain_pct" />
+    <Preference
+        android:key="rdpPointerAccelReset"
+        android:title="@string/rdp_pointer_accel_reset"
+        android:summary="@string/rdp_pointer_accel_reset_summary" />
 </PreferenceScreen>

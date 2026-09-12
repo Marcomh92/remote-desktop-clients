@@ -179,6 +179,10 @@ public class Constants {
     public static final String doubleTapTimeoutMs = "doubleTapTimeoutMs";
     public static final String rdpModifierKeyHeightDp = "rdpModifierKeyHeightDp";
     public static final String rdpModifierKeySizeDp = "rdpModifierKeySizeDp";
+    public static final String rdpPointerAccelEnabled = "rdpPointerAccelEnabled";
+    public static final String rdpPointerAccelLowGainPct = "rdpPointerAccelLowGainPct";
+    public static final String rdpPointerAccelHighGainPct = "rdpPointerAccelHighGainPct";
+    public static final String rdpPointerAccelReset = "rdpPointerAccelReset";
     public static final String localToRemoteClipboardIntegration = "localToRemoteClipboardIntegration";
     public static final String remoteToLocalClipboardIntegration = "remoteToLocalClipboardIntegration";
     public static final String EXTRA_KEYS_TOUR_SHOWN = "extraKeysTourShown";
@@ -204,6 +208,9 @@ public class Constants {
     public static final int DEFAULT_DOUBLE_TAP_TIMEOUT_MS = 300;
     public static final int DEFAULT_RDP_MODIFIER_KEY_HEIGHT_DP = 27;
     public static final int DEFAULT_RDP_MODIFIER_KEY_SIZE_DP = 42;
+    public static final boolean DEFAULT_RDP_POINTER_ACCEL_ENABLED = true;
+    public static final int DEFAULT_RDP_POINTER_ACCEL_LOW_GAIN_PCT = 100;
+    public static final int DEFAULT_RDP_POINTER_ACCEL_HIGH_GAIN_PCT = 300;
 
     public static final String DEFAULT_VPN_URI_SCHEME = "vpn";
 

@@ -75,3 +75,28 @@ Build verification:
 | `bVNC/src/main/res/values/strings.xml` | Labels `double_tap_slop_dp` and `double_tap_timeout_ms`. |
 
 Build verified: `:bVNC:compileDebugJavaWithJavac`, `:aRDP-app:assembleDebug`, `:common:testDebugUnitTest` all green. Reviewer confidence: High after one review-improve cycle addressing Major #1 (mid-session pref propagation) and Minors #1–3 (triple-tap, defensive invariant, slider floor).
+
+---
+
+## Follow-up 2026-09-12 — Manual detector replaced; original fix was structurally unreachable
+
+The round-3 implementation (above) used a manual detector inside `TouchInputHandlerGeneric.onSingleTapUp` that buffered each `onSingleTapUp` event and looked for a matching second tap. Stock `GestureDetector`, however, **distance-rejects the second tap before it ever reaches `onSingleTapUp`** once the pair drifts past `ViewConfiguration.getScaledDoubleTapSlop()` (~100 dp on most devices). The user's `doubleTapSlopDp` SeekBar capped at **48 dp**, so the configuration that the manual detector was supposed to extend (8–48 dp) was exactly the range the framework had already filtered out. Every "fix" inside `onSingleTapUp` was therefore structurally unreachable: pairs the user actually experienced as a double-tap never arrived at the detector.
+
+Round 9 replaces the approach with `DoubleTapPairTracker` (`remoteClientLib/src/main/java/com/undatech/opaque/input/DoubleTapPairTracker.java`), fed directly from the raw primary-pointer `ACTION_DOWN` / `ACTION_UP` stream inside `TouchInputHandlerGeneric.onTouchEvent:716-749`. Effective thresholds are **framework-floored** rather than capped below the framework:
+
+| Knob | Old (round 3) | New (round 9) |
+|---|---|---|
+| Slop | `doubleTapSlopDp × density`, capped 4–48 dp | `slopPx = max(doubleTapSlopDp × density, viewConfiguration.getScaledDoubleTapSlop())`. Pref SeekBar max raised 48 → **150 dp** (`global_preferences.xml:67-71`). |
+| Timeout | `doubleTapTimeoutMs`, capped 100–800 ms | `timeoutMs = max(doubleTapTimeoutMs, viewConfiguration.getDoubleTapTimeout())`. |
+| Tap-region | implicit (only the slop) | explicit `tapRegionPx = viewConfiguration.getScaledTouchSlop()`; UP beyond the region **clears** the pending tap rather than pairing. |
+| Hook | `notifyDoubleTap` fired from `onSingleTapUp` buffer | `onManualDoubleTap(MotionEvent secondDown)` hook, fed by the tracker AND delegated to from `onDoubleTap` (round 9 wires both paths into the single hook). |
+
+The tracker's behaviour is pinned by `DoubleTapPairTrackerTest` (14 deterministic tests — caller supplies event times; see `docs/TESTING.md` §3.1).
+
+### Touchpad drag-commit threshold moved 2 dp → 8 dp (`DRAG_THRESHOLD_DP`)
+
+Round 4 set `DRAG_THRESHOLD_DP = 2f` (`TouchInputHandlerTouchpad.java:55`), reasoning that a smaller commit threshold would prevent the round-2 "click-then-drag" title-bar-maximize bug. In practice the 2 dp value sat below typical finger jitter on a phone-sized touchscreen — every intentional double-tap that drifted 2–3 dp between the two taps was being converted into a press-and-drag instead of a double-click. Round 9 raises the threshold to `DRAG_THRESHOLD_DP = 8f` (INV-022 amended). The round-2 title-bar-maximize regression is independently avoided by `onDoubleTap` → `onManualDoubleTap` delegation plus `TouchInputHandlerTouchpad.onManualDoubleTap` setting `stockDoubleTapFired = true` (round 9 — see the touchpad override at `:425-455`).
+
+### Status
+
+The follow-up is **code-complete** in this checkout. **Device verification is still pending** — the user has not yet run a live touch session against either a Windows RDP server or an Android emulator with the round-9 build installed. The manual smoke checklist above is unchanged and still applies. See `docs/MASTER.md` round-9 row for the full list of changes.

@@ -63,6 +63,8 @@ public class TouchInputHandlerDirectDragPan extends TouchInputHandlerGeneric {
     public void onLongPress(MotionEvent e) {
         GeneralUtils.debugLog(debugLogging, TAG, "onLongPress, e: " + e);
 
+        doubleTapTracker.reset();
+
         // If we've performed a right/middle-click and the gesture is not over yet, do not start drag mode.
         if (secondPointerWasDown || thirdPointerWasDown)
             return;

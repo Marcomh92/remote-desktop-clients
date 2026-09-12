@@ -67,7 +67,7 @@
     <SeekBarPreference
         android:defaultValue="24"
         android:key="doubleTapSlopDp"
-        android:max="48"
+        android:max="150"
         android:title="@string/double_tap_slop_dp" />
     <SeekBarPreference
         android:defaultValue="300"

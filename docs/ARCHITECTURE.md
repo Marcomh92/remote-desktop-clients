@@ -164,16 +164,17 @@ Schema migrations live at `Database.java:283-596`. Each `DBV_*` constant corresp
 
 ### Scripts (`.bat` files)
 
-| Script | Wrapper for | Notes |
-|---|---|---|
-| `gradlew.bat` | Standard Gradle wrapper | — |
-| `test-all.bat` | `run-locked.bat gradlew.bat test --no-daemon --console=plain --quiet` | Prints `All tests passed` on success |
-| `test-package.bat <pkg-spec>` | Resolves module via `resolve-test-module.ps1`, runs `gradlew.bat <task> --tests %1` | Optional module arg if class lives in more than one |
-| `test-class.bat <class>` | Same as `test-package.bat` but for a single class | Prints `Tests passed` |
+| Script | Wrapper for | Notes | State in this checkout (2026-09-12) |
+|---|---|---|---|
+| `gradlew.bat` | Standard Gradle wrapper | — | Present. |
+| `compile.bat` | `run-locked.bat gradlew.bat assembleDebug --no-daemon --console=plain --quiet --warning-mode none` | Prints `Project compiled successfully` on success | Working — `run-locked.bat` requires `run-with-lock.ps1` (present). |
+| `test-all.bat` | `run-locked.bat gradlew.bat test --no-daemon --console=plain --quiet --warning-mode none` | Prints `All tests passed` on success | Working — same `run-locked.bat` / `run-with-lock.ps1` chain. |
+| `test-package.bat <pkg-spec>` | Resolves module via `resolve-test-module.ps1`, runs `gradlew.bat <task> --tests %1` | Optional module arg if class lives in more than one | Requires `resolve-test-module.ps1` (not present). Wrapper exits early. Not permanently broken — add the helper. |
+| `test-class.bat <class>` | Same as `test-package.bat` but for a single class | Prints `Tests passed` | Same — requires `resolve-test-module.ps1` (not present). |
 
-> All four wrappers `call run-locked.bat` as their first line; `run-locked.bat` (paired with `run-with-lock.ps1`) serializes builds via a `PowerShell` file lock. Wrappers work as documented.
+> Each wrapper `call run-locked.bat` as its first line; `run-locked.bat` (paired with `run-with-lock.ps1`) serializes builds via a `PowerShell` file lock and forwards the rest of the arguments to `gradlew.bat`. `run-with-lock.ps1` is present, so `compile.bat` and `test-all.bat` work end-to-end. `test-package.bat` and `test-class.bat` additionally call `resolve-test-module.ps1` to map a test spec to a Gradle task; that helper is not committed, so those two wrappers exit early. They can be re-enabled by adding `resolve-test-module.ps1` — none of the other wrappers are affected.
 >
-> **AGENTS.md notes `compile.bat`.** That file does not exist on disk; use `gradlew.bat assembleDebug` directly. Treat the AGENTS.md table as illustrative of intended scripts, not authoritative.
+> AGENTS.md's table (`compile.bat`, `test-all.bat`, `test-package.bat`, `test-class.bat`) lists intended scripts that are all present in this checkout — the previous "does not exist on disk" caveat for `compile.bat` no longer applies. The only gap is the `resolve-test-module.ps1` helper used by two of the four wrappers.
 
 ### Custom VNC viewer
 

@@ -26,6 +26,7 @@ import android.view.MotionEvent;
 
 import com.undatech.opaque.InputCarriable;
 import com.undatech.opaque.Viewable;
+import com.undatech.opaque.input.PointerAccelerationCurve;
 import com.undatech.opaque.util.GeneralUtils;
 import com.undatech.remoteClientUi.R;
 
@@ -45,12 +46,13 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     /** Below this speed (px/s in either axis) the fling stops to avoid jitter. */
     private static final float FLING_NOISE_PX_PER_S = 200f;
     /**
-     * A very tiny density-independent movement threshold for what counts as a
-     * double-click+drag — the finger may move a tiny amount without the gesture
-     * being rejected; a true double-click has virtually no movement after the
-     * 2nd tap lands.
+     * Density-independent movement threshold past which the second tap commits
+     * to a drag (rather than a double-click). 8 dp is the platform touch-slop
+     * convention, chosen so a normal finger's jitter during an intended
+     * double-click does not get misread as a drag; the previous 2 dp was below
+     * typical touch noise.
      */
-    private static final float DRAG_THRESHOLD_DP = 2f;
+    private static final float DRAG_THRESHOLD_DP = 8f;
     /** Finger-edge band (dp): within this distance of a canvas edge the drag keeps moving the cursor. */
     private static final float EDGE_PIN_BAND_DP = 24f;
     /** Slow drag-hold cursor speed, in density-independent units (dp/s of screen motion at sensitivity 1). */
@@ -76,9 +78,9 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     private float rdpDoubleTapDownX = 0f;
     private float rdpDoubleTapDownY = 0f;
     /**
-     * Fixed density-independent movement threshold (≈2 dp) the finger must
-     * exceed to commit the second tap to a drag. Kept tiny so a true
-     * double-click (which has almost no movement after the 2nd tap) still lands.
+     * Fixed density-independent movement threshold ({@link #DRAG_THRESHOLD_DP})
+     * the finger must exceed to commit the second tap to a drag, so a true
+     * double-click survives normal finger jitter.
      */
     private final int rdpTouchSlop;
 
@@ -91,6 +93,23 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
     private final EdgePinRepeater edgePinRepeater;
     /** {@link #EDGE_PIN_BAND_DP} pre-converted to pixels for the current display. */
     private final int edgePinBandPx;
+
+    /**
+     * RDP-only velocity-dependent cursor acceleration curve (configured via
+     * {@link #setPointerAccel(boolean, float, float)}). Disabled by default,
+     * in which case its gain is exactly 1.0f and the RDP math reduces to the
+     * legacy zoom-only scaling.
+     */
+    private final PointerAccelerationCurve pointerAccelCurve = new PointerAccelerationCurve();
+    // Sub-pixel remainders for the RDP path: slow movements below 1 px/event
+    // accumulate here instead of being truncated away every event.
+    private float carryX = 0f;
+    private float carryY = 0f;
+    // Per-event curve-gain cache: gain() must be evaluated once per MotionEvent
+    // (its EMA state would otherwise advance once per axis). Both getX and
+    // getY for the same event reuse the cached value.
+    private long lastCurveEventTime = Long.MIN_VALUE;
+    private float lastCurveGain = 1f;
 
     public TouchInputHandlerTouchpad(TouchInputDelegate touchInputDelegate, Viewable viewable,
                                      InputCarriable remoteInput, boolean debugLogging,
@@ -140,7 +159,30 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             // Drop any half-armed adaptive double-tap state with it.
             rdpDoubleTapPending = false;
             rdpDoubleTapDragging = false;
+            // No RDP-only pointer-acceleration state may survive the teardown.
+            resetPointerCurveState();
         }
+    }
+
+    /**
+     * Enables/disables and configures the RDP-only cursor acceleration curve.
+     * Called by the activity when the Pointer Acceleration setting changes.
+     * Disabling it applies a flat gain of 1.0 on the RDP path (the legacy
+     * {@code computeAcceleration} math is never used there); the base
+     * sensitivity multiplier still applies unchanged.
+     */
+    public void setPointerAccel(boolean enabled, float gainLow, float gainHigh) {
+        pointerAccelCurve.setConfig(enabled, gainLow, gainHigh);
+        resetPointerCurveState();
+    }
+
+    /** Drops the curve EMA state and the sub-pixel carry (new config / teardown). */
+    private void resetPointerCurveState() {
+        pointerAccelCurve.reset();
+        carryX = 0f;
+        carryY = 0f;
+        lastCurveEventTime = Long.MIN_VALUE;
+        lastCurveGain = 1f;
     }
 
     /*
@@ -224,14 +266,27 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                 return true;
             }
 
+            // Raw finger delta before the sensitivity multiplier, density
+            // normalized — the input the RDP acceleration curve expects.
+            float rawDx = distanceX / displayDensity;
+            float rawDy = distanceY / displayDensity;
+
             // Make distanceX/Y display density independent.
             float sensitivity = remoteInput.getPointer().getSensitivity();
             distanceX = sensitivity * distanceX / displayDensity;
             distanceY = sensitivity * distanceY / displayDensity;
 
-            // Compute the absolute new mouse position.
-            int newX = Math.round(remoteInput.getPointer().getX() + getDelta(-distanceX));
-            int newY = Math.round(remoteInput.getPointer().getY() + getDelta(-distanceY));
+            // Compute the absolute new mouse position. Both axes pass the same
+            // event time so the RDP curve's gain is evaluated exactly once.
+            // The sub-pixel carry is RDP-only; non-RDP keeps the legacy math.
+            float deltaX = getDelta(-distanceX, rawDx, rawDy, e2.getEventTime());
+            float deltaY = getDelta(-distanceY, rawDx, rawDy, e2.getEventTime());
+            if (isRdp) {
+                deltaX = carryFor(deltaX, true);
+                deltaY = carryFor(deltaY, false);
+            }
+            int newX = Math.round(remoteInput.getPointer().getX() + deltaX);
+            int newY = Math.round(remoteInput.getPointer().getY() + deltaY);
 
             remoteInput.getPointer().moveMouse(newX, newY, meta);
         }
@@ -293,6 +348,9 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         // dispatch, so a reset here would wipe the state onDoubleTap just armed. The reset
         // lives in onTouchEvent()'s ACTION_DOWN branch, which runs before the detector feed.
         flinger.stop();
+        // A new touch starts a fresh pointer motion: drop the curve EMA state
+        // and any sub-pixel carry left over from the previous gesture.
+        resetPointerCurveState();
         return true;
     }
 
@@ -315,6 +373,7 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             super.onLongPress(e);
             return;
         }
+        doubleTapTracker.reset();
         if (dragMode || rightDragMode || middleDragMode) {
             // Already mid-drag (e.g. double-tap-and-hold commit ran). Don't switch.
             return;
@@ -361,25 +420,38 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
             return super.onDoubleTap(e);
         }
         GeneralUtils.debugLog(debugLogging, TAG, "onDoubleTap, e: " + e);
+        // Stock accepted the pair: arm the adaptive state machine (instead of
+        // firing the base two-click default) and mark the stock path as taken.
+        onManualDoubleTap(e);
+        return true;
+    }
 
-        // Defensive: clear any stale relaxed-slop buffer + flag so a future
-        // Android GestureDetector that routes the second UP through
-        // onSingleTapUp (instead of onDoubleTapEvent) doesn't make the base
-        // class fire notifyDoubleTap() on top of the state machine's
-        // emitDoubleTapDoubleClick(). Stock today uses onDoubleTapEvent, so
-        // this is belt-and-braces; cheap to keep.
-        stockDoubleTapFired = true;
-        if (bufferedSingleTapUp != null) {
-            bufferedSingleTapUp.recycle();
-            bufferedSingleTapUp = null;
+    /**
+     * Armed by either the stock detector's {@link #onDoubleTap(MotionEvent)}
+     * (within getScaledDoubleTapSlop) or the base class's relaxed-slop
+     * {@code DoubleTapPairTracker}. Both paths enter the same adaptive state
+     * machine: the second tap's DOWN sends nothing yet; movement past
+     * {@link #rdpTouchSlop} commits a LEFT-drag, a lift emits a double-click.
+     * The base two-click shortcut is never used (marked here) so the pair
+     * produces either the drag or the double-click, never extra clicks on top.
+     */
+    @Override
+    protected void onManualDoubleTap(MotionEvent e) {
+        if (!isRdp) {
+            super.onManualDoubleTap(e);
+            return;
         }
-
+        // Tell the base class the pair was consumed: without this, after our
+        // onTouchEvent returns, the base would fire notifyDoubleTap() (two
+        // clicks) on top of the state machine's own output. Also arm the
+        // click suppression so the stock onSingleTapConfirmed() scheduled for
+        // the second UP does not add a third click behind the state machine's.
+        stockDoubleTapFired = true;
+        suppressNextSingleTapConfirmed = true;
         rdpDoubleTapDownX = e.getX();
         rdpDoubleTapDownY = e.getY();
         rdpDoubleTapPending = true;
         rdpDoubleTapDragging = false;
-
-        return true;
     }
 
     /**
@@ -519,10 +591,21 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
      */
     protected int getX(MotionEvent e) {
         if (dragMode || rightDragMode || middleDragMode) {
+            // Raw per-event finger deltas (dp) measured against the pre-event
+            // anchors; both axes are captured before either anchor moves so the
+            // acceleration curve sees the true event velocity regardless of
+            // whether getX or getY is called first.
+            float rawDx = (e.getX() - dragX) / displayDensity;
+            float rawDy = (e.getY() - dragY) / displayDensity;
             float distanceX = e.getX() - dragX;
             dragX = e.getX();
-            // Compute the absolute new X coordinate.
-            return Math.round(remoteInput.getPointer().getX() + getDelta(distanceX));
+            // Compute the absolute new X coordinate. The sub-pixel carry is
+            // RDP-only; non-RDP keeps the legacy math.
+            float deltaX = getDelta(distanceX, rawDx, rawDy, e.getEventTime());
+            if (isRdp) {
+                deltaX = carryFor(deltaX, true);
+            }
+            return Math.round(remoteInput.getPointer().getX() + deltaX);
         }
         dragX = e.getX();
         return remoteInput.getPointer().getX();
@@ -537,23 +620,86 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
      */
     protected int getY(MotionEvent e) {
         if (dragMode || rightDragMode || middleDragMode) {
+            // See getX: both raw deltas are captured before either anchor moves
+            // so the curve sees the true per-event velocity whichever axis is
+            // evaluated first (the gain itself is cached per event time).
+            float rawDx = (e.getX() - dragX) / displayDensity;
+            float rawDy = (e.getY() - dragY) / displayDensity;
             float distanceY = e.getY() - dragY;
             dragY = e.getY();
-            // Compute the absolute new Y coordinate.
-            return Math.round(remoteInput.getPointer().getY() + getDelta(distanceY));
+            // Compute the absolute new Y coordinate. The sub-pixel carry is
+            // RDP-only; non-RDP keeps the legacy math.
+            float deltaY = getDelta(distanceY, rawDx, rawDy, e.getEventTime());
+            if (isRdp) {
+                deltaY = carryFor(deltaY, false);
+            }
+            return Math.round(remoteInput.getPointer().getY() + deltaY);
         }
         dragY = e.getY();
         return remoteInput.getPointer().getY();
     }
 
     /**
-     * Computes how far the pointer will move.
-     * @param distance
-     * @return
+     * Computes how far the cursor will move for this event.
+     *
+     * <p>RDP sessions run the zoom scaling through the velocity-dependent
+     * {@link #pointerAccelCurve} (gain is evaluated exactly once per event, see
+     * {@link #lastCurveEventTime}); the per-axis sub-pixel carry is applied by
+     * the callers via {@link #carryFor} (see {@link #carryX}/{@link #carryY}).
+     * Non-RDP sessions keep the legacy {@link #computeAcceleration(float)} math
+     * byte-for-byte.
+     *
+     * @param distance   display-space movement for the axis (px).
+     * @param rawDx      raw finger delta X for the event, density-normalized (dp).
+     * @param rawDy      raw finger delta Y for the event, density-normalized (dp).
+     * @param eventTimeMs {@link MotionEvent#getEventTime()} of the event.
+     * @return cursor movement for the axis (px; fractional on the RDP path until
+     *         the caller folds in the carry).
      */
-    private float getDelta(float distance) {
+    private float getDelta(float distance, float rawDx, float rawDy, long eventTimeMs) {
         float delta = (float) (distance * Math.cbrt(viewable.getZoomFactor()));
-        return computeAcceleration(delta);
+        if (!isRdp) {
+            return computeAcceleration(delta);
+        }
+        return delta * getCurveGain(rawDx, rawDy, eventTimeMs);
+    }
+
+    /**
+     * Folds the per-axis sub-pixel remainder into an RDP cursor delta: the
+     * previous remainder is added, the integer part taken, and the fraction
+     * stored back, so slow movements below 1 px/event still accumulate. A zero
+     * delta (e.g. a click at the current cursor position) leaves the carry
+     * untouched. Non-RDP deltas bypass this entirely, keeping that math
+     * unchanged.
+     */
+    private float carryFor(float delta, boolean isX) {
+        if (delta == 0f) {
+            return 0f;
+        }
+        float carry = isX ? carryX : carryY;
+        float sum = delta + carry;
+        int step = (int) sum;
+        if (isX) {
+            carryX = sum - step;
+        } else {
+            carryY = sum - step;
+        }
+        return step;
+    }
+
+    /**
+     * Evaluates the RDP acceleration curve at most once per event: getX() and
+     * getY() process the same MotionEvent (same {@code eventTimeMs}), and the
+     * curve's internal EMA state must advance exactly once per event, so the
+     * second axis reuses the cached gain. A stale call with a different event
+     * time (e.g. a delayed tap-confirmed click) simply recomputes — harmless.
+     */
+    private float getCurveGain(float rawDx, float rawDy, long eventTimeMs) {
+        if (eventTimeMs != lastCurveEventTime) {
+            lastCurveEventTime = eventTimeMs;
+            lastCurveGain = pointerAccelCurve.gain(rawDx, rawDy, eventTimeMs);
+        }
+        return lastCurveGain;
     }
 
     /**

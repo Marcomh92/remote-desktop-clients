@@ -962,6 +962,8 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             }
             if (touchInputHandler != null && touchInputHandler instanceof TouchInputHandlerTouchpad) {
                 ((TouchInputHandlerTouchpad) touchInputHandler).setFlingDamp(getFlingResistanceDamp());
+                ((TouchInputHandlerTouchpad) touchInputHandler).setPointerAccel(
+                        getRdpPointerAccelEnabled(), getRdpPointerAccelLowGain(), getRdpPointerAccelHighGain());
             }
             // Push the relaxed-slop double-tap prefs so a mid-session slider
             // change in Settings takes effect without reopening the connection
@@ -1318,6 +1320,8 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 }
                 if (inputModeHandlers[i] instanceof TouchInputHandlerTouchpad) {
                     ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setFlingDamp(getFlingResistanceDamp());
+                    ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setPointerAccel(
+                            getRdpPointerAccelEnabled(), getRdpPointerAccelLowGain(), getRdpPointerAccelHighGain());
                 }
                 // Same push as the onResume block above, but applied to every
                 // pre-built input-mode handler so a switch between modes
@@ -1372,6 +1376,23 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     float getMouseAccelerationStrength() {
         int slider = Utils.querySharedPreferencesInt(this, Constants.mouseAccelerationStrength, Constants.DEFAULT_MOUSE_ACCELERATION_STRENGTH);
         return slider / 10f; // default slider 10 -> 1.0f (legacy acceleration curve)
+    }
+
+    /** Whether the RDP pointer acceleration curve is enabled (setting ignored by non-RDP handlers). */
+    boolean getRdpPointerAccelEnabled() {
+        return Utils.querySharedPreferenceBoolean(this, Constants.rdpPointerAccelEnabled, Constants.DEFAULT_RDP_POINTER_ACCEL_ENABLED);
+    }
+
+    /** Slow-movement gain for the RDP pointer acceleration curve, slider percent clamped to 25-300 and divided by 100. */
+    float getRdpPointerAccelLowGain() {
+        int slider = Utils.querySharedPreferencesInt(this, Constants.rdpPointerAccelLowGainPct, Constants.DEFAULT_RDP_POINTER_ACCEL_LOW_GAIN_PCT);
+        return Math.max(25, Math.min(300, slider)) / 100f;
+    }
+
+    /** Fast-movement gain for the RDP pointer acceleration curve, never below the slow-movement gain. */
+    float getRdpPointerAccelHighGain() {
+        int slider = Utils.querySharedPreferencesInt(this, Constants.rdpPointerAccelHighGainPct, Constants.DEFAULT_RDP_POINTER_ACCEL_HIGH_GAIN_PCT);
+        return Math.max(getRdpPointerAccelLowGain(), Math.max(100, Math.min(600, slider)) / 100f);
     }
 
     float getFlingResistanceDamp() {

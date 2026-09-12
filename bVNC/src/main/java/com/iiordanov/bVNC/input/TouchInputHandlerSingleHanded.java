@@ -162,6 +162,8 @@ public class TouchInputHandlerSingleHanded extends TouchInputHandlerDirectSwipeP
     public void onLongPress(MotionEvent e) {
         GeneralUtils.debugLog(debugLogging, TAG, "onLongPress, e: " + e);
 
+        doubleTapTracker.reset();
+
         if (singleHandedGesture || singleHandedJustEnded)
             return;
 

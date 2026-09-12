@@ -1014,6 +1014,12 @@ Below that is where you configure your connection.
     <string name="double_tap_timeout_ms">Double-Tap Timeout (ms)</string>
     <string name="rdp_modifier_key_height_dp">Modifier key height</string>
     <string name="rdp_modifier_key_size_dp">Modifier key size</string>
+    <string name="rdp_pointer_accel_enabled">Pointer acceleration</string>
+    <string name="rdp_pointer_accel_low_gain_pct">Pointer speed: slow movement (%)</string>
+    <string name="rdp_pointer_accel_high_gain_pct">Pointer speed: fast movement (%)</string>
+    <string name="rdp_pointer_accel_reset">Reset pointer acceleration to defaults</string>
+    <string name="rdp_pointer_accel_reset_summary">Restores pointer acceleration to enabled, 100% slow-movement speed and 300% fast-movement speed.</string>
+    <string name="rdp_pointer_accel_reset_toast">Pointer acceleration reset to defaults</string>
     <string name="desktop_scale_percentage">Custom Scaling Percentage</string>
     <string name="show_menu">Show Menu</string>
     <string name="move_toolbar">Move Toolbar</string>

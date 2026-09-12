@@ -25,15 +25,14 @@ To run the round-6 suite: `.\test-package.bat "com.undatech.opaque.input.*"` (th
 
 Wrapper scripts in the repo root:
 
-| Command | Effect |
-|---|---|
-| `.\test-all.bat` | Runs all `:common` tests once. Prints `All tests passed` on success. |
-| `.\test-class.bat "com.example.MyTest"` | Runs a single class. Prints `Tests passed`. |
-| `.\test-package.bat "com.example.*"` | Runs all tests in a package. Optional second arg picks the module if a name collides across modules. |
+| Command | Effect | State in this checkout (2026-09-12) |
+|---|---|---|
+| `.\test-all.bat` | Runs all `:common` tests once. Prints `All tests passed` on success. | Working — invokes `run-locked.bat`, which requires `run-with-lock.ps1` (present). |
+| `.\compile.bat` | Runs `assembleDebug`. Prints `Project compiled successfully` on success. | Working — same `run-locked.bat` / `run-with-lock.ps1` chain. |
+| `.\test-class.bat "com.example.MyTest"` | Runs a single class. Prints `Tests passed`. | Requires `resolve-test-module.ps1` (not present in this checkout). Falls back to `gradlew.bat test --tests <FQN>` directly. |
+| `.\test-package.bat "com.example.*"` | Runs all tests in a package. Optional second arg picks the module if a name collides across modules. | Same — requires `resolve-test-module.ps1` (not present). Falls back to `gradlew.bat <module>:testDebugUnitTest --tests "<pkg>.*"` directly. |
 
-> All four wrappers `call run-locked.bat` (paired with `run-with-lock.ps1`) as their first line; that script serializes builds via a `PowerShell` file lock and forwards the rest of the arguments to `gradlew.bat`. Wrappers work as documented.
-
-AGENTS.md mentions `compile.bat` and a `TestListener` in `app/build.gradle.kts`. **Neither exists on disk.** Use `gradlew.bat assembleDebug` directly; the test scripts manage their own output.
+The wrappers each `call run-locked.bat` (paired with `run-with-lock.ps1`) as their first line; that script serializes builds via a `PowerShell` file lock and forwards the rest of the arguments to `gradlew.bat`. `run-with-lock.ps1` is present, so `test-all.bat` / `compile.bat` work end-to-end. `test-package.bat` and `test-class.bat` additionally invoke `resolve-test-module.ps1` to map a test spec to a Gradle task; that helper is not committed, so those two wrappers exit early with a PowerShell "cannot find path" error. They are not permanently broken — the helpers just need to be added.
 
 ---
 
@@ -43,21 +42,19 @@ AGENTS.md mentions `compile.bat` and a `TestListener` in `app/build.gradle.kts`.
 
 **To extend tests:** add new tests in `common/src/test/java/.../<YourClass>Test.java`. Use `junit:junit:4.13.2`. Don't introduce new test dependencies without checking that Gradle can resolve them offline.
 
-### 3.1 What `:remoteClientLib` covers (round 6)
+### 3.1 What `:remoteClientLib` covers
 
-`RemoteKeyboardStateTest` (`remoteClientLib/src/test/java/com/undatech/opaque/input/RemoteKeyboardStateTest.java`) is the first pure-logic unit suite outside `:common`. It exercises the modifier-down/up bookkeeping that the round-6 toggle-OFF path (`RdpCommunicator.releaseModifierKeys` → `RemoteKeyboardState.isRemoteKeyDown`) relies on.
+The `:remoteClientLib` test root (`remoteClientLib/src/test/java/com/undatech/opaque/input/`) holds three deterministic JUnit 4 suites. All feed off `junit:junit:4.13.2`. No Android framework, no Robolectric — the classes under test are pure-logic.
 
-| Test | What it pins |
-|---|---|
-| `altReportedDown_remainsDownUntilExplicitRelease` | A `Tab` tap is not a modifier-state update — Alt stays down across non-modifier activity. |
-| `updateRemoteMetaState_releasesOnlyRequestedModifier` | Releasing Alt leaves Ctrl held; per-bit independence. |
-| `shouldSendModifier_sendsEachChangedTransitionOnce` | Duplicate-suppression: the same DOWN transition is sent at most once via `shouldSendModifier` until the state changes. |
-| `shouldSendModifier_releasingAlt_doesNotReleaseCtrl` | Release-path independence: releasing Alt never fires a Ctrl release. |
-| `isRemoteKeyDown_doesNotMutateState` | The new public `isRemoteKeyDown(int)` is read-only — repeated calls return the same value and do not change `remoteKeyboardMetaState`. |
+| Suite | File | Tests | What it pins |
+|---|---|---|---|
+| `RemoteKeyboardStateTest` | `RemoteKeyboardStateTest.java` | 5 | Round-6 modifier-down/up bookkeeping: `isRemoteKeyDown(int)` is read-only; releases are per-bit; `shouldSendModifier` suppresses duplicate transitions. INV-024 gate. |
+| `DoubleTapPairTrackerTest` | `DoubleTapPairTrackerTest.java` | 14 | Round-9 relaxed-slop double-tap detector (INV-028): pair accepted at slop/timeout boundary and rejected one px/ms beyond; Euclidean distance across both axes; second DOWN after a completed pair starts fresh; tap-region clearing beyond `tapRegionPx`; UP without pending DOWN is ignored; DOWN without prior UP replaces the pending tap; repeated pairs in sequence; `reset()` clears state; `setSlopPx` / `setTimeoutMs` reset state and apply the new threshold; negative thresholds clamp to zero. Deterministic — caller supplies event times. |
+| `PointerAccelerationCurveTest` | `PointerAccelerationCurveTest.java` | 11 | Round-9 RDP-only velocity-based pointer acceleration (`PointerAccelerationCurve`): `disabled ⇒ flat gain of 1.0`; zero/non-finite movement returns `gainLow`; slow movement approaches `gainLow`; gain monotonically increases with speed; EMA smoothing ramps gradually so a single sample at reference speed does not hit the midpoint; direction reversal on either axis resets smoothed velocity; first sample uses a default step, later elapsed times are clamped; `setConfig` sanitizes invalid gains (`gainHigh < gainLow` raises `gainHigh`; non-finite/NaN/negative values coerced to safe defaults); per-call gain clamp to range; `reset()` clears smoothed velocity. |
 
-To run a single test method: `.\test-class.bat "com.undatech.opaque.input.RemoteKeyboardStateTest"`. To run all tests in the module: `.\test-package.bat "com.undatech.opaque.input.*"`.
+To run a single test method: `.\test-class.bat "com.undatech.opaque.input.RemoteKeyboardStateTest"`. To run all tests in the module: `.\test-package.bat "com.undatech.opaque.input.*"`. The two round-9 suites replaced the round-6 single-suite model; their `PointerAccelerationCurve` / `DoubleTapPairTracker` SUTs are in `remoteClientLib/src/main/java/com/undatech/opaque/input/`.
 
-Why this was extracted: `RemoteKeyboardState.isRemoteKeyDown` was the round-6 gate that prevents the spurious LMENU release when the user toggles Alt ON then OFF without a key in between (INV-024). Without unit coverage, that guard would silently regress.
+Why these were extracted: each guards a different round-9 RDP reliability invariant (`RemoteKeyboardState` → INV-024 toggle-OFF gate; `DoubleTapPairTracker` → INV-028 relaxed-slop detector; `PointerAccelerationCurve` → INV-027 RDP-only pointer acceleration carve-out). Without unit coverage, each guard would silently regress. The round-3 buffered-`onSingleTapUp` detector that BUG-003 originally landed lacked unit coverage and was structurally unreachable in production (see `known_issues/fixed/BUG-003-touchscreen-double-tap-slop.md` follow-up).
 
 ---
 
