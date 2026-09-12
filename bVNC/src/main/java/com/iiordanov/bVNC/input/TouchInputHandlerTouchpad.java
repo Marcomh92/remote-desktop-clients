@@ -40,6 +40,15 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
      */
     private boolean isRdp = false;
 
+    /**
+     * RDP-only precise finger tracking: when enabled, the remote cursor moves
+     * exactly 1:1 with on-screen finger movement
+     * ({@code remoteDelta = viewDelta / viewable.getZoomFactor()}), bypassing
+     * the sensitivity multiplier, display density and the acceleration curve.
+     * Disabled by default; non-RDP sessions never read it.
+     */
+    private boolean rdpPreciseTracking = false;
+
     /** Tick interval (ms) and per-tick damping factor for the fling deceleration. */
     private static final int FLING_TICK_MS = 20;
     private static final float FLING_DAMP = 0.86f;
@@ -176,6 +185,28 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         resetPointerCurveState();
     }
 
+    /**
+     * Enables/disables the RDP-only precise finger tracking (default disabled).
+     * When on, cursor movement is exactly 1:1 with on-screen finger movement
+     * ({@code remoteDelta = viewDelta / viewable.getZoomFactor()}) with no
+     * sensitivity multiplier, density normalization or acceleration-curve gain,
+     * so the on-screen finger-to-cursor offset stays constant at any finger speed.
+     * Called by the activity when the Precise Tracking setting changes.
+     *
+     * <p>Toggling always drops the curve EMA state and the sub-pixel carry so
+     * stale state cannot cause a one-shot cursor jump; enabling also stops any
+     * in-flight fling / edge-pin repeaters so a legacy-gain tick cannot leak
+     * into precise mode (mirrors the stop calls in {@link #setRdp(boolean)}).
+     */
+    public void setPointerPreciseTracking(boolean enabled) {
+        this.rdpPreciseTracking = enabled;
+        resetPointerCurveState();
+        if (enabled) {
+            flinger.stop();
+            edgePinRepeater.stop();
+        }
+    }
+
     /** Drops the curve EMA state and the sub-pixel carry (new config / teardown). */
     private void resetPointerCurveState() {
         pointerAccelCurve.reset();
@@ -183,6 +214,17 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
         carryY = 0f;
         lastCurveEventTime = Long.MIN_VALUE;
         lastCurveGain = 1f;
+    }
+
+    /**
+     * Returns the zoom factor to divide by on the precise-tracking path.
+     * {@code FitToScreenScaling.scaling} initialises to 0 before scale setup, so a
+     * non-positive zoom would turn the divisions into NaN/Infinity cursor
+     * coordinates; treat that degenerate state as 1:1.
+     */
+    private float getPreciseZoom() {
+        float zoom = viewable.getZoomFactor();
+        return zoom > 0f ? zoom : 1f;
     }
 
     /*
@@ -266,21 +308,34 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                 return true;
             }
 
-            // Raw finger delta before the sensitivity multiplier, density
-            // normalized — the input the RDP acceleration curve expects.
-            float rawDx = distanceX / displayDensity;
-            float rawDy = distanceY / displayDensity;
+            float deltaX;
+            float deltaY;
+            if (isRdp && rdpPreciseTracking) {
+                // Precise tracking: cursor follows the finger 1:1 — view px
+                // divided by the zoom, with no sensitivity, density or curve
+                // gain. The negation matches the getDelta(-distanceX, ...) call
+                // below (GestureDetector's distance is the inverse of the
+                // finger's movement direction).
+                float zoom = getPreciseZoom();
+                deltaX = -distanceX / zoom;
+                deltaY = -distanceY / zoom;
+            } else {
+                // Raw finger delta before the sensitivity multiplier, density
+                // normalized — the input the RDP acceleration curve expects.
+                float rawDx = distanceX / displayDensity;
+                float rawDy = distanceY / displayDensity;
 
-            // Make distanceX/Y display density independent.
-            float sensitivity = remoteInput.getPointer().getSensitivity();
-            distanceX = sensitivity * distanceX / displayDensity;
-            distanceY = sensitivity * distanceY / displayDensity;
+                // Make distanceX/Y display density independent.
+                float sensitivity = remoteInput.getPointer().getSensitivity();
+                distanceX = sensitivity * distanceX / displayDensity;
+                distanceY = sensitivity * distanceY / displayDensity;
 
-            // Compute the absolute new mouse position. Both axes pass the same
-            // event time so the RDP curve's gain is evaluated exactly once.
-            // The sub-pixel carry is RDP-only; non-RDP keeps the legacy math.
-            float deltaX = getDelta(-distanceX, rawDx, rawDy, e2.getEventTime());
-            float deltaY = getDelta(-distanceY, rawDx, rawDy, e2.getEventTime());
+                // Compute the absolute new mouse position. Both axes pass the same
+                // event time so the RDP curve's gain is evaluated exactly once.
+                // The sub-pixel carry is RDP-only; non-RDP keeps the legacy math.
+                deltaX = getDelta(-distanceX, rawDx, rawDy, e2.getEventTime());
+                deltaY = getDelta(-distanceY, rawDx, rawDy, e2.getEventTime());
+            }
             if (isRdp) {
                 deltaX = carryFor(deltaX, true);
                 deltaY = carryFor(deltaY, false);
@@ -591,17 +646,27 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
      */
     protected int getX(MotionEvent e) {
         if (dragMode || rightDragMode || middleDragMode) {
-            // Raw per-event finger deltas (dp) measured against the pre-event
-            // anchors; both axes are captured before either anchor moves so the
-            // acceleration curve sees the true event velocity regardless of
-            // whether getX or getY is called first.
-            float rawDx = (e.getX() - dragX) / displayDensity;
-            float rawDy = (e.getY() - dragY) / displayDensity;
+            // Raw per-event finger delta measured against the pre-event anchor,
+            // captured before the anchor moves.
             float distanceX = e.getX() - dragX;
+            float deltaX;
+            if (isRdp && rdpPreciseTracking) {
+                // Precise tracking: the drag follows the finger 1:1 — raw view
+                // px divided by the zoom, positive sign (unlike onScroll's
+                // GestureDetector deltas).
+                deltaX = distanceX / getPreciseZoom();
+            } else {
+                // Raw per-event finger deltas (dp) measured against the pre-event
+                // anchors; both axes are captured before either anchor moves so the
+                // acceleration curve sees the true event velocity regardless of
+                // whether getX or getY is called first.
+                float rawDx = distanceX / displayDensity;
+                float rawDy = (e.getY() - dragY) / displayDensity;
+                // Compute the absolute new X coordinate. The sub-pixel carry is
+                // RDP-only; non-RDP keeps the legacy math.
+                deltaX = getDelta(distanceX, rawDx, rawDy, e.getEventTime());
+            }
             dragX = e.getX();
-            // Compute the absolute new X coordinate. The sub-pixel carry is
-            // RDP-only; non-RDP keeps the legacy math.
-            float deltaX = getDelta(distanceX, rawDx, rawDy, e.getEventTime());
             if (isRdp) {
                 deltaX = carryFor(deltaX, true);
             }
@@ -620,16 +685,24 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
      */
     protected int getY(MotionEvent e) {
         if (dragMode || rightDragMode || middleDragMode) {
-            // See getX: both raw deltas are captured before either anchor moves
-            // so the curve sees the true per-event velocity whichever axis is
+            // See getX: the raw delta is captured before either anchor moves so
+            // the curve sees the true per-event velocity whichever axis is
             // evaluated first (the gain itself is cached per event time).
-            float rawDx = (e.getX() - dragX) / displayDensity;
-            float rawDy = (e.getY() - dragY) / displayDensity;
             float distanceY = e.getY() - dragY;
+            float deltaY;
+            if (isRdp && rdpPreciseTracking) {
+                // Precise tracking: the drag follows the finger 1:1 — raw view
+                // px divided by the zoom, positive sign (unlike onScroll's
+                // GestureDetector deltas).
+                deltaY = distanceY / getPreciseZoom();
+            } else {
+                float rawDx = (e.getX() - dragX) / displayDensity;
+                float rawDy = distanceY / displayDensity;
+                // Compute the absolute new Y coordinate. The sub-pixel carry is
+                // RDP-only; non-RDP keeps the legacy math.
+                deltaY = getDelta(distanceY, rawDx, rawDy, e.getEventTime());
+            }
             dragY = e.getY();
-            // Compute the absolute new Y coordinate. The sub-pixel carry is
-            // RDP-only; non-RDP keeps the legacy math.
-            float deltaY = getDelta(distanceY, rawDx, rawDy, e.getEventTime());
             if (isRdp) {
                 deltaY = carryFor(deltaY, false);
             }
@@ -800,15 +873,25 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
                 return;
             }
 
-            // Mirror onScroll's display-density scaling so the fling feels consistent
-            // with drag inertia across devices. Include the cbrt(zoomFactor) curve
-            // that getDelta() applies, otherwise the fling speed scales differently
-            // at different zoom levels than on-scroll does.
-            float sensitivity = remoteInput.getPointer().getSensitivity();
-            float zoomCurve = (float) Math.cbrt(viewable.getZoomFactor());
             float dt = (float) FLING_TICK_MS / 1000f;
-            float dx = vx * dt * sensitivity / displayDensity * zoomCurve;
-            float dy = vy * dt * sensitivity / displayDensity * zoomCurve;
+            float dx;
+            float dy;
+            if (isRdp && rdpPreciseTracking) {
+                // Precise tracking: the fling velocity is view px/s — divide by
+                // the zoom (gain exactly 1/zoom) for a 1:1 finger->cursor motion.
+                float zoom = getPreciseZoom();
+                dx = vx * dt / zoom;
+                dy = vy * dt / zoom;
+            } else {
+                // Mirror onScroll's display-density scaling so the fling feels consistent
+                // with drag inertia across devices. Include the cbrt(zoomFactor) curve
+                // that getDelta() applies, otherwise the fling speed scales differently
+                // at different zoom levels than on-scroll does.
+                float sensitivity = remoteInput.getPointer().getSensitivity();
+                float zoomCurve = (float) Math.cbrt(viewable.getZoomFactor());
+                dx = vx * dt * sensitivity / displayDensity * zoomCurve;
+                dy = vy * dt * sensitivity / displayDensity * zoomCurve;
+            }
             x = Math.round(x + dx);
             y = Math.round(y + dy);
 
@@ -872,14 +955,22 @@ public class TouchInputHandlerTouchpad extends TouchInputHandlerGeneric {
 
         @Override
         public void run() {
-            // Mirror Flinger's per-tick math (sensitivity, density, cbrt(zoom))
-            // so the slow drag-hold motion feels consistent with regular drag
-            // inertia at the same zoom level.
-            float sensitivity = remoteInput.getPointer().getSensitivity();
-            float zoomCurve = (float) Math.cbrt(viewable.getZoomFactor());
             float dt = (float) FLING_TICK_MS / 1000f;
-            x = Math.round(x + vx * dt * sensitivity / displayDensity * zoomCurve);
-            y = Math.round(y + vy * dt * sensitivity / displayDensity * zoomCurve);
+            if (isRdp && rdpPreciseTracking) {
+                // Precise tracking: gain is exactly 1/zoom — view px/s divided
+                // by the zoom gives 1:1 finger->cursor motion.
+                float zoom = getPreciseZoom();
+                x = Math.round(x + vx * dt / zoom);
+                y = Math.round(y + vy * dt / zoom);
+            } else {
+                // Mirror Flinger's per-tick math (sensitivity, density, cbrt(zoom))
+                // so the slow drag-hold motion feels consistent with regular drag
+                // inertia at the same zoom level.
+                float sensitivity = remoteInput.getPointer().getSensitivity();
+                float zoomCurve = (float) Math.cbrt(viewable.getZoomFactor());
+                x = Math.round(x + vx * dt * sensitivity / displayDensity * zoomCurve);
+                y = Math.round(y + vy * dt * sensitivity / displayDensity * zoomCurve);
+            }
 
             // Snapshot pointer position before the move so an edge-clamped tick
             // (same value before/after) stops the repeater instead of

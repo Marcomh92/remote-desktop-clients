@@ -105,7 +105,7 @@ This is the central flow for upcoming work. See `docs/features/INPUT_PIPELINE.md
 | Step | Mouse | Keyboard |
 |---|---|---|
 | Capture | `RemoteCanvasActivity.onTouchEvent` (`RemoteCanvasActivity.java:1424`) | `RemoteClientsInputListener.onKey` (`RemoteClientsInputListener.kt:52`, set via `canvas.setOnKeyListener(inputListener)` in `RemoteCanvasActivity.setInputHandler:1330`) |
-| Gesture / IME interpret | `TouchInputHandlerGeneric` / `TouchInputHandler*` (RDP touchpad adds fling + long-press=right-click + double-tap-hold=drag via `TouchInputHandlerTouchpad.setRdp(true)`) | `RemoteRdpKeyboard.processLocalKeyEvent` + `RemoteKeyboardState.detectHardwareMetaState` |
+| Gesture / IME interpret | `TouchInputHandlerGeneric` / `TouchInputHandler*` (RDP touchpad adds fling + long-press=right-click + double-tap-hold=drag via `TouchInputHandlerTouchpad.setRdp(true)`; the RDP-only precise finger-tracking toggle applies a flat `1/zoom` gain and bypasses touchpad sensitivity/acceleration — see `features/INPUT_PIPELINE.md` §2.2.1 / INV-029) | `RemoteRdpKeyboard.processLocalKeyEvent` + `RemoteKeyboardState.detectHardwareMetaState` |
 | Protocol method | `pointer.leftButtonDown(...)` etc. | `RdpKeyboardMapper.processAndroidKeyEvent` |
 | One-shot consumption hook (RDP row only) | n/a | `RemoteRdpKeyboard.fireKeyDispatchedIfApplicable:118-135` → `RdpModifierRowHandler.onKeyDispatched` |
 | Native send | `RdpCommunicator.writePointerEvent` (queued in `inputExecutor`) | `RdpCommunicator.processVirtualKey` → `LibFreeRDP.sendKeyEvent` (queued in `inputExecutor`) |

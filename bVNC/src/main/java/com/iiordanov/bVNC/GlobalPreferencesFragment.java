@@ -25,6 +25,15 @@ public class GlobalPreferencesFragment extends PreferenceFragmentCompat {
             if (legacyAcceleration != null) {
                 legacyAcceleration.setVisible(false);
             }
+            SwitchPreferenceCompat preciseTracking = findPreference(Constants.rdpPreciseFingerTracking);
+            if (preciseTracking != null) {
+                preciseTracking.setOnPreferenceChangeListener((preference, newValue) -> {
+                    applyPreciseTrackingGreying(Boolean.TRUE.equals(newValue));
+                    return true;
+                });
+                applyPreciseTrackingGreying(Utils.querySharedPreferenceBoolean(
+                        requireContext(), Constants.rdpPreciseFingerTracking, Constants.DEFAULT_RDP_PRECISE_FINGER_TRACKING));
+            }
         } else if (Utils.isSpice(getContext())) {
             addPreferencesFromResource(R.xml.global_preferences_spice);
         }
@@ -66,6 +75,34 @@ public class GlobalPreferencesFragment extends PreferenceFragmentCompat {
         if (enabled != null) {
             enabled.setChecked(Constants.DEFAULT_RDP_POINTER_ACCEL_ENABLED);
         }
+        applyPreciseTrackingGreying(Utils.querySharedPreferenceBoolean(
+                requireContext(), Constants.rdpPreciseFingerTracking, Constants.DEFAULT_RDP_PRECISE_FINGER_TRACKING));
         Toast.makeText(requireContext(), R.string.rdp_pointer_accel_reset_toast, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Enables or disables the RDP pointer-tuning widgets that are bypassed while
+     * precise finger tracking is on, so the settings screen reflects that
+     * touchpad sensitivity and pointer acceleration no longer apply.
+     *
+     * @param on whether precise finger tracking is currently enabled
+     */
+    private void applyPreciseTrackingGreying(boolean on) {
+        Preference touchpadSensitivity = findPreference(Constants.touchpadSensitivity);
+        if (touchpadSensitivity != null) {
+            touchpadSensitivity.setEnabled(!on);
+        }
+        Preference accelEnabled = findPreference(Constants.rdpPointerAccelEnabled);
+        if (accelEnabled != null) {
+            accelEnabled.setEnabled(!on);
+        }
+        Preference accelLowGain = findPreference(Constants.rdpPointerAccelLowGainPct);
+        if (accelLowGain != null) {
+            accelLowGain.setEnabled(!on);
+        }
+        Preference accelHighGain = findPreference(Constants.rdpPointerAccelHighGainPct);
+        if (accelHighGain != null) {
+            accelHighGain.setEnabled(!on);
+        }
     }
 }

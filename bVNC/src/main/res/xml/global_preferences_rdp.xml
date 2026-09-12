@@ -13,6 +13,11 @@
         android:max="72"
         android:title="@string/rdp_modifier_key_size_dp" />
     <SwitchPreferenceCompat
+        android:defaultValue="false"
+        android:key="rdpPreciseFingerTracking"
+        android:title="@string/rdp_precise_finger_tracking"
+        android:summary="@string/rdp_precise_finger_tracking_summary" />
+    <SwitchPreferenceCompat
         android:defaultValue="true"
         android:key="rdpPointerAccelEnabled"
         android:title="@string/rdp_pointer_accel_enabled" />

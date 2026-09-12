@@ -58,7 +58,7 @@ There is **no Activity declared exclusively in a free flavor manifest**.
 
 ### 2.1 Global prefs (`bVNC/src/main/res/xml/global_preferences*.xml`)
 
-Loaded by `bVNC/src/main/java/com/iiordanov/bVNC/GlobalPreferencesFragment.java`. The active tree is `global_preferences.xml` + flavor overlay `_vnc` / `_rdp` / `_spice`. For aRDP the overlay (`global_preferences_rdp.xml`) currently contains a visual spacer plus two SeekBarPreferences for round-6 modifier row sizing (see §2.2 / `PAT-016`). All RDP connection settings are per-connection; the row sizing prefs are global.
+Loaded by `bVNC/src/main/java/com/iiordanov/bVNC/GlobalPreferencesFragment.java`. The active tree is `global_preferences.xml` + flavor overlay `_vnc` / `_rdp` / `_spice`. For aRDP the overlay (`global_preferences_rdp.xml`) contains a visual spacer plus the RDP-only tunables added in rounds 6-10 (modifier row sizing, pointer acceleration, precise finger tracking — see §2.2 / `PAT-016`). All RDP connection settings are per-connection; these tuning prefs are global.
 
 `SharedPreferences` file name: `"generalSettings"`.
 
@@ -88,6 +88,7 @@ Loaded by `bVNC/src/main/java/com/iiordanov/bVNC/GlobalPreferencesFragment.java`
 | `rAltAsIsoL3Shift` | true (VNC overlay only) | Right-Alt → ISO L3 Shift | `global_preferences_vnc.xml:5` |
 | **`rdpModifierKeyHeightDp`** (round 6, RDP overlay only) | `27` → max `56` | Modifier row container height (dp); pushes `setRowHeightdp` on `ModifierRowView` | `global_preferences_rdp.xml:5-9`; `Constants.rdpModifierKeyHeightDp` / `DEFAULT_RDP_MODIFIER_KEY_HEIGHT_DP` (`Constants.java:178,199`); `RemoteCanvasActivity.getRdpModifierKeyHeightDp:1332-1334`; consumed via `RdpModifierRowHandler.applyModifierRowSizing:243-246` |
 | **`rdpModifierKeySizeDp`** (round 6, RDP overlay only) | `42` → max `72` | Per-button width (dp) on every modifier / action / toggle button; label text scales as `12sp × dp/42`, 8 sp floor | `global_preferences_rdp.xml:10-14`; `Constants.rdpModifierKeySizeDp` / `DEFAULT_RDP_MODIFIER_KEY_SIZE_DP` (`Constants.java:179,200`); `RemoteCanvasActivity.getRdpModifierKeySizeDp:1336-1338`; consumed via `applyModifierRowSizing:243-246` |
+| **`rdpPreciseFingerTracking`** (round 10, RDP overlay only) | `false` | RDP-only precise finger tracking: cursor follows the finger 1:1 (`remoteDelta = viewDelta / zoom`), bypassing touchpad sensitivity + pointer acceleration. Greys out `touchpadSensitivity` and the `rdpPointerAccel*` rows while ON. | `global_preferences_rdp.xml:15-19`; `Constants.rdpPreciseFingerTracking` (`Constants.java:186`) / `DEFAULT_RDP_PRECISE_FINGER_TRACKING` (`:215`); `RemoteCanvasActivity.getRdpPreciseFingerTracking:1389-1391`; consumed via `TouchInputHandlerTouchpad.setPointerPreciseTracking:201-208`; greying via `GlobalPreferencesFragment.applyPreciseTrackingGreying:90-107` |
 | `PREF_USE_LAST_POSITION_TOOLBAR` + `_X` `_Y` `_MOVED` | — | Legacy per-id toolbar prefs; migrated to DB columns in `DBV_2_2_4` | `Database.java:604` `migrateToolbarPrefsToDb()` |
 
 ### 2.3 Per-connection columns relevant to aRDP

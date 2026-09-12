@@ -964,6 +964,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                 ((TouchInputHandlerTouchpad) touchInputHandler).setFlingDamp(getFlingResistanceDamp());
                 ((TouchInputHandlerTouchpad) touchInputHandler).setPointerAccel(
                         getRdpPointerAccelEnabled(), getRdpPointerAccelLowGain(), getRdpPointerAccelHighGain());
+                ((TouchInputHandlerTouchpad) touchInputHandler).setPointerPreciseTracking(getRdpPreciseFingerTracking());
             }
             // Push the relaxed-slop double-tap prefs so a mid-session slider
             // change in Settings takes effect without reopening the connection
@@ -1322,6 +1323,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
                     ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setFlingDamp(getFlingResistanceDamp());
                     ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setPointerAccel(
                             getRdpPointerAccelEnabled(), getRdpPointerAccelLowGain(), getRdpPointerAccelHighGain());
+                    ((TouchInputHandlerTouchpad) inputModeHandlers[i]).setPointerPreciseTracking(getRdpPreciseFingerTracking());
                 }
                 // Same push as the onResume block above, but applied to every
                 // pre-built input-mode handler so a switch between modes
@@ -1381,6 +1383,11 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
     /** Whether the RDP pointer acceleration curve is enabled (setting ignored by non-RDP handlers). */
     boolean getRdpPointerAccelEnabled() {
         return Utils.querySharedPreferenceBoolean(this, Constants.rdpPointerAccelEnabled, Constants.DEFAULT_RDP_POINTER_ACCEL_ENABLED);
+    }
+
+    /** Whether the RDP touchpad tracks the finger precisely, bypassing touchpad sensitivity and pointer acceleration (setting ignored by non-RDP handlers). */
+    boolean getRdpPreciseFingerTracking() {
+        return Utils.querySharedPreferenceBoolean(this, Constants.rdpPreciseFingerTracking, Constants.DEFAULT_RDP_PRECISE_FINGER_TRACKING);
     }
 
     /** Slow-movement gain for the RDP pointer acceleration curve, slider percent clamped to 25-300 and divided by 100. */

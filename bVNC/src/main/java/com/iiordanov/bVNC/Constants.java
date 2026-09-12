@@ -183,6 +183,7 @@ public class Constants {
     public static final String rdpPointerAccelLowGainPct = "rdpPointerAccelLowGainPct";
     public static final String rdpPointerAccelHighGainPct = "rdpPointerAccelHighGainPct";
     public static final String rdpPointerAccelReset = "rdpPointerAccelReset";
+    public static final String rdpPreciseFingerTracking = "rdpPreciseFingerTracking";
     public static final String localToRemoteClipboardIntegration = "localToRemoteClipboardIntegration";
     public static final String remoteToLocalClipboardIntegration = "remoteToLocalClipboardIntegration";
     public static final String EXTRA_KEYS_TOUR_SHOWN = "extraKeysTourShown";
@@ -211,6 +212,7 @@ public class Constants {
     public static final boolean DEFAULT_RDP_POINTER_ACCEL_ENABLED = true;
     public static final int DEFAULT_RDP_POINTER_ACCEL_LOW_GAIN_PCT = 100;
     public static final int DEFAULT_RDP_POINTER_ACCEL_HIGH_GAIN_PCT = 300;
+    public static final boolean DEFAULT_RDP_PRECISE_FINGER_TRACKING = false;
 
     public static final String DEFAULT_VPN_URI_SCHEME = "vpn";
 

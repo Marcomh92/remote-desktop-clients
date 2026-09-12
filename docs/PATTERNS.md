@@ -207,7 +207,7 @@ Future refactors should normalize the leak (shut down `inputExecutor` in `close`
 
 ## PAT-013 — RDP-only touchpad gestures, gated by `setRdp(boolean)`
 
-**Rule.** `TouchInputHandlerTouchpad` extends `TouchInputHandlerGeneric` with three gestures that match the Microsoft RDP Android app, plus the RDP-only velocity-based pointer acceleration curve (see §Pointer acceleration curve below). They are gated by `setRdp(boolean)` so non-RDP touchpad sessions keep the legacy behaviour.
+**Rule.** `TouchInputHandlerTouchpad` extends `TouchInputHandlerGeneric` with three gestures that match the Microsoft RDP Android app, plus the RDP-only velocity-based pointer acceleration curve (see §Pointer acceleration curve below) and an RDP-only precise finger-tracking mode (see §Precise finger tracking below). They are gated by `setRdp(boolean)` so non-RDP touchpad sessions keep the legacy behaviour.
 
 | Gesture | Where | Wire mapping |
 |---|---|---|
@@ -217,6 +217,8 @@ Future refactors should normalize the leak (shut down `inputExecutor` in `close`
 | **Drag-hold edge pinning** (round 4) | Inner `EdgePinRepeater:686-740`; started/updated from `updateEdgePinRepeater:575-600` driven by `onTouchEvent` `ACTION_MOVE` while `rdpDoubleTapDragging` | While a committed double-click+drag is pinned in the 24 dp canvas-edge band (`EDGE_PIN_BAND_DP`), posts 20 ms ticks on `viewable.getHandler()` that call `pointer.moveMouseButtonDown` (LEFT held) with constant velocity 100 dp/s (`EDGE_PIN_SPEED_DP_PER_S`). Displacement: `vx*dt*sensitivity/displayDensity*cbrt(zoom)`. Stops on `ACTION_UP`/`ACTION_CANCEL`/`ACTION_DOWN`/`setRdp(false)`/`onLongPress`, finger leaving the band, or remote-desktop edge clamp. |
 
 **Pointer acceleration curve (round 9, RDP-only).** `TouchInputHandlerTouchpad.getDelta(distance, rawDx, rawDy, eventTimeMs):628-665` applies the velocity-based `PointerAccelerationCurve` only when `isRdp`; non-RDP keeps the legacy `computeAcceleration(float)` math byte-for-byte. Per-event gain cache (`lastCurveEventTime` + `lastCurveGain`, `:685-693`) ensures the EMA advances exactly once per `MotionEvent` — `getX`/`getY` process the same event so the second axis reuses the cached gain. Sub-pixel carry (`carryX` / `carryY` + `carryFor:670-683`, truncation toward zero) handles slow movements below 1 px/event. Configured by `setPointerAccel(enabled, gainLow, gainHigh):171-175`; resets the curve EMA + the carry on `onDown` (`:351-354`), `setRdp(false)` (`:165-167`), and the config setter itself.
+
+**Precise finger tracking (round 10, RDP-only).** When `rdpPreciseTracking` is on, `onScroll` move (`:313-321`), the `getX`/`getY` drag-delta branch (`:653-657`, `:693-697`), `Flinger.run:879-884`, and `EdgePinRepeater.run:959-964` all apply gain exactly `1 / viewable.getZoomFactor()` instead of `sensitivity / displayDensity × cbrt(zoom) × curveGain`. Touchpad sensitivity, display density, the `cbrt(zoom)` curve, and `PointerAccelerationCurve` are bypassed; sub-pixel carry (`carryFor`) is retained for move + drag and `getDelta` (`:732`) is unchanged. `setPointerPreciseTracking(boolean):201-208` drops the curve EMA + carry on every toggle and stops any in-flight flinger / edge-pin repeater when enabling; `getPreciseZoom():225-228` falls back to `1f` when the zoom factor is `<= 0`. `RemoteCanvasActivity.getRdpPreciseFingerTracking():1389-1391` pushes it at the same two sites as the other touchpad tunables (`onResume:967`, `getInputHandlerById:1326`). See PAT-016 and INV-029.
 
 **Wiring.**
 
@@ -300,6 +302,8 @@ Defaults reproduce the prior hardcoded value, so the slider at its default repro
 | `rdpPointerAccelReset` (click action) | n/a — restores `rdpPointerAccelLowGainPct`/`HighGainPct`/`Enabled` to their defaults via `GlobalPreferencesFragment.resetRdpPointerAccel:54-69` and toasts `rdp_pointer_accel_reset_toast` | (UI-only; no consumer field) | (user taps the row in Settings) |
 
 The setter chain `setPointerAccel → setConfig → reset()` drops the curve EMA + the sub-pixel carry so a stale half-gesture can't survive a slider move. Two push sites only (`onResume` + `getInputHandlerById`) for the same reason as the round-6 modifier-row sizing: there is no lazily-built handler that can miss an `onResume` push.
+
+**RDP-only carve-out (round 10 — precise finger tracking).** `rdpPreciseFingerTracking` (a `SwitchPreferenceCompat`, default `false`, in `global_preferences_rdp.xml:15-19`) follows the same RDP-only overlay shape. `RemoteCanvasActivity.getRdpPreciseFingerTracking:1389-1391` reads it and pushes `TouchInputHandlerTouchpad.setPointerPreciseTracking:201-208` at the same two sites (`onResume:967`, `getInputHandlerById:1326`). `GlobalPreferencesFragment.applyPreciseTrackingGreying:90-107` additionally disables the four settings rows that precise mode bypasses (`touchpadSensitivity`, `rdpPointerAccelEnabled` / `LowGainPct` / `HighGainPct`) while the toggle is ON; the `rdpPointerAccelReset` action stays enabled.
 
 **RDP-only carve-out (round 6).** The modifier-row sizing knobs follow the same shape, but live in the RDP-only overlay file `global_preferences_rdp.xml` (the base `global_preferences.xml` is untouched):
 
