@@ -181,6 +181,30 @@ public final class ExtraKeysView extends GridLayout {
     private int mLongPressCount;
 
 
+    /** Defines the default height-to-width ratio applied to each button's layout height
+     *  post-measure when {@link #mRdpGridMode} is enabled. Mirrors the Microsoft RDP "123"
+     *  grid where each cell is taller than it is wide (text wraps across two lines for
+     *  narrow cells like "Home", "Insert"). RDP-only because the 2-row VNC/SPICE/Opaque
+     *  pager is allocated a fixed 68dp height (see dimens.xml extra_keys_height) and would
+     *  overflow if every button demanded 1.5x its column width in vertical space. */
+    private static final float BUTTON_HEIGHT_TO_WIDTH_RATIO = 1.5f;
+
+    /** Defines the per-side margin in pixels applied between cells when {@link #mRdpGridMode}
+     *  is enabled. ~2dp on mdpi (round-13 feedback: 4dp read as too much padding on real
+     *  hardware). The reload() pass scales this by display density so it stays consistent
+     *  across screens. */
+    private static final float CELL_MARGIN_DP = 2f;
+
+    /**
+     * Gates the RDP-specific button styling (per-cell margins + 1.5× aspect ratio height).
+     * Default {@code false}: {@link ExtraKeysView} keeps its legacy sizing and zero-margin
+     * behavior, preserving the VNC/SPICE/Opaque 2-row pager layout (which is allocated a
+     * fixed {@code extra_keys_height} of 68dp and would overflow with 1.5× buttons).
+     * Set to {@code true} by {@link RdpExtraGridPanel} after construction.
+     */
+    private boolean mRdpGridMode = false;
+
+
     public ExtraKeysView(Context context, AttributeSet attrs) {
         super(context, attrs);
 
@@ -195,6 +219,39 @@ public final class ExtraKeysView extends GridLayout {
 
         setLongPressTimeout(ViewConfiguration.getLongPressTimeout());
         setLongPressRepeatDelay(DEFAULT_LONG_PRESS_REPEAT_DELAY);
+
+        // ponytail: RDP-only post-layout pass that sizes every button to
+        // BUTTON_HEIGHT_TO_WIDTH_RATIO * measured column width. No-op for non-RDP grids
+        // (gated on mRdpGridMode). GridLayout's columnSpec FILL distributes columns evenly
+        // after the first measure; the listener then derives each row's cell width from
+        // parent_width / column_count and overrides each child's height. Convergence is
+        // guaranteed by the lp.height == targetHeight guard, which prevents re-entry.
+        addOnLayoutChangeListener((v, left, top, right, bottom,
+                                   oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (!mRdpGridMode) return;
+            int colCount = getColumnCount();
+            if (colCount <= 0) return;
+            int width = right - left;
+            if (width <= 0) return;
+
+            int marginPx = (int) (CELL_MARGIN_DP * getResources().getDisplayMetrics().density + 0.5f);
+            // Effective per-column width = (parent_width - sum_of_horizontal_margins) / colCount
+            int cellWidth = (width - colCount * 2 * marginPx) / colCount;
+            if (cellWidth <= 0) return;
+            int targetHeight = (int) (cellWidth * BUTTON_HEIGHT_TO_WIDTH_RATIO + 0.5f);
+
+            boolean changed = false;
+            for (int i = 0; i < getChildCount(); i++) {
+                View child = getChildAt(i);
+                LayoutParams lp = (LayoutParams) child.getLayoutParams();
+                if (lp.height != targetHeight) {
+                    lp.height = targetHeight;
+                    child.setLayoutParams(lp);
+                    changed = true;
+                }
+            }
+            if (changed) requestLayout();
+        });
     }
 
     private static int getSystemAttrColor(Context context, int attr, int defaultColor) {
@@ -348,6 +405,15 @@ public final class ExtraKeysView extends GridLayout {
     }
 
 
+    /** Enable RDP-only button styling: 4dp per-side cell margins and a 1.5× height-to-width
+     *  aspect ratio. See {@link #mRdpGridMode}. Default off. Must be called before {@link #reload}
+     *  for the cell margins to take effect; the listener-driven height override works regardless
+     *  of when this is called (it reads {@link #mRdpGridMode} on every layout pass). */
+    public void setRdpGridMode(boolean rdpGridMode) {
+        mRdpGridMode = rdpGridMode;
+    }
+
+
     /** Get the default map that can be used for {@link #mSpecialButtons}. */
     @NonNull
     public Map<SpecialButton, SpecialButtonState> getDefaultSpecialButtons(ExtraKeysView extraKeysView) {
@@ -483,9 +549,17 @@ public final class ExtraKeysView extends GridLayout {
                 if(Build.VERSION.SDK_INT == Build.VERSION_CODES.LOLLIPOP) {
                    param.height = (int)(heightPx + 0.5);
                 } else {
+                    // Initial height is 0 (let GridLayout's rowSpec distribute). The post-layout
+                    // OnLayoutChangeListener in the constructor overrides this with the
+                    // BUTTON_HEIGHT_TO_WIDTH_RATIO-derived height on the next frame.
                     param.height = 0;
                 }
-                param.setMargins(0, 0, 0, 0);
+                // Per-side cell margins are RDP-only (see mRdpGridMode). The legacy 2-row
+                // VNC/SPICE/Opaque pager uses zero margins to fill its fixed-height slot.
+                int cellMarginPx = mRdpGridMode
+                    ? (int) (CELL_MARGIN_DP * getResources().getDisplayMetrics().density + 0.5f)
+                    : 0;
+                param.setMargins(cellMarginPx, cellMarginPx, cellMarginPx, cellMarginPx);
                 int span = buttonInfo.getSpan();
                 param.columnSpec = span > 1
                     ? GridLayout.spec(col, span, GridLayout.FILL, 1.f)
