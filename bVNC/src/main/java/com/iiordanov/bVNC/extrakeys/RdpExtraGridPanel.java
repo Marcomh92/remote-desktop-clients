@@ -45,15 +45,30 @@ public class RdpExtraGridPanel extends LinearLayout {
     private static final String TAG = "RdpExtraGridPanel";
 
     /**
-     * Three rows of eight buttons: ESC/F1-F6/DEL, TAB/F7-F12/BKSP, navigation keys.
-     * Row widths are equal (8 cols) so the underlying {@link ExtraKeysView}
-     * lays out a clean rectangular grid.
+     * Four-row, nine-column grid that mirrors the Microsoft RDP "123" extra-keys layout:
+     *   Row 1: F1, F2, F3, mouse icon, backspace, /, Home, ▲, PgUp
+     *   Row 2: F4, F5, F6, screenshot icon, enter, *, ◄, (empty), ►
+     *   Row 3: F7, F8, F9, (empty), (empty), -, End, ▼, PgDn
+     *   Row 4: F10, F11, F12, "Number Keys" (spans 2 cols), +, Insert, Delete, Enter
+     *
+     * <p>Cells whose key is the empty string render as gaps (see
+     * {@link ExtraKeysView#reload}). The "Number Keys" cell uses {@code span:2} so the
+     * {@link android.widget.GridLayout} gives it the width of two columns. The mouse and
+     * screenshot cells reference drawable resources that {@link ExtraKeyButton#getIconResId}
+     * resolves at render time; if the resource is missing, the cell renders as text-only.
      */
     private static final String GRID_JSON =
         "[" +
-        "[\"ESC\",\"F1\",\"F2\",\"F3\",\"F4\",\"F5\",\"F6\",\"DEL\"]," +
-        "[\"TAB\",\"F7\",\"F8\",\"F9\",\"F10\",\"F11\",\"F12\",\"BKSP\"]," +
-        "[\"HOME\",\"END\",\"PGUP\",\"PGDN\",\"INS\",\"LEFT\",\"DOWN\",\"RIGHT\"]" +
+        // Row 1: F-keys | mouse | BKSP | arithmetic | navigation (text, up-arrow, PgUp)
+        "[\"F1\",\"F2\",\"F3\",{\"key\":\"MOUSE\",\"icon\":\"mouse_icon\"},\"BKSP\",\"/\",\"HOME\",{\"key\":\"UP\",\"display\":\"\\u25B2\"},\"PGUP\"]," +
+        // Row 2: F-keys | screenshot | enter | arithmetic | navigation (left, empty, right)
+        "[\"F4\",\"F5\",\"F6\",{\"key\":\"SCREENSHOT\",\"icon\":\"ic_screen_black_48dp\"},\"ENTER\",\"*\",{\"key\":\"LEFT\",\"display\":\"\\u25C0\"},\"\",{\"key\":\"RIGHT\",\"display\":\"\\u25B6\"}]," +
+        // Row 3: F-keys | (empty), (empty) | arithmetic | navigation (End, down-arrow, PgDn)
+        "[\"F7\",\"F8\",\"F9\",\"\",\"\",\"-\",\"END\",{\"key\":\"DOWN\",\"display\":\"\\u25BC\"},\"PGDN\"]," +
+        // Row 4: F-keys | Number Keys (wide, span:2) | arithmetic | Insert, Delete, Enter
+        // Note: the empty string after NUMLOCK is required as a column placeholder so that the "+"
+        // button lands at the correct grid column. ExtraKeysView skips rendering the empty cell.
+        "[\"F10\",\"F11\",\"F12\",{\"key\":\"NUMLOCK\",\"display\":\"Number Keys\",\"span\":2},\"\",\"+\",\"INS\",\"DEL\",{\"key\":\"ENTER\",\"display\":\"Enter\"}]" +
         "]";
 
     private ExtraKeysView extraKeysView;

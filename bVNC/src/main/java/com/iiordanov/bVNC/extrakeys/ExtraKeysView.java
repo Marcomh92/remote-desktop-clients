@@ -29,6 +29,7 @@ import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.widget.GridLayout;
@@ -387,6 +388,11 @@ public final class ExtraKeysView extends GridLayout {
             for (int col = 0; col < buttons[row].length; col++) {
                 final ExtraKeyButton buttonInfo = buttons[row][col];
 
+                // Skip empty placeholder cells. A grid cell with an empty key (e.g. JSON "")
+                // is reserved as a gap inside a row whose other rows use the column, so we
+                // simply leave the slot empty instead of rendering an un-tappable button.
+                if (buttonInfo.getKey().isEmpty()) continue;
+
                 MaterialButton button;
                 if (isSpecialButton(buttonInfo)) {
                     button = createSpecialButton(buttonInfo.getKey(), true);
@@ -395,7 +401,20 @@ public final class ExtraKeysView extends GridLayout {
                     button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
                 }
 
-                button.setText(buttonInfo.getDisplay());
+                final int iconResId = buttonInfo.getIconResId(getContext());
+                if (iconResId != 0) {
+                    // Icon-only button: hide the text and center the icon inside the button.
+                    button.setIconResource(iconResId);
+                    button.setText("");
+                    button.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
+                    button.setIconPadding(0);
+                    button.setGravity(Gravity.CENTER);
+                    // 24 dp ≈ icon size on a 42 dp button. Density-scaled here.
+                    int iconSizePx = (int) (24 * getResources().getDisplayMetrics().density + 0.5f);
+                    button.setIconSize(iconSizePx);
+                } else {
+                    button.setText(buttonInfo.getDisplay());
+                }
                 button.setTextColor(mButtonTextColor);
                 button.setAllCaps(mButtonTextAllCaps);
                 button.setCornerRadius(0);
@@ -467,7 +486,10 @@ public final class ExtraKeysView extends GridLayout {
                     param.height = 0;
                 }
                 param.setMargins(0, 0, 0, 0);
-                param.columnSpec = GridLayout.spec(col, GridLayout.FILL, 1.f);
+                int span = buttonInfo.getSpan();
+                param.columnSpec = span > 1
+                    ? GridLayout.spec(col, span, GridLayout.FILL, 1.f)
+                    : GridLayout.spec(col, GridLayout.FILL, 1.f);
                 param.rowSpec = GridLayout.spec(row, GridLayout.FILL, 1.f);
                 button.setLayoutParams(param);
 

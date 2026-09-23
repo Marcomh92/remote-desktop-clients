@@ -19,8 +19,10 @@
 
 package com.iiordanov.bVNC.extrakeys;
 
+import android.content.Context;
 import android.text.TextUtils;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -44,6 +46,12 @@ public class ExtraKeyButton {
     /** The key name for the nested dict to define popup extra key info if using a dict to define the extra key. {popup: {key: name, ...}, ...} */
     public static final String KEY_POPUP = "popup";
 
+    /** The key name for the drawable resource name used as the button icon. {icon: "name", ...} */
+    public static final String KEY_ICON = "icon";
+
+    /** The key name for the number of grid columns the button spans. {span: 2, ...} */
+    public static final String KEY_SPAN = "span";
+
 
     /**
      * The key that will be sent to the remote session, either a control character, like defined in
@@ -66,6 +74,18 @@ public class ExtraKeyButton {
      */
     @Nullable
     private final ExtraKeyButton popup;
+
+    /**
+     * The drawable resource name to use as an icon for this button, or {@code null} to render text only.
+     * Resolved to a resource id by {@link #getIconResId(android.content.Context)}.
+     */
+    @Nullable
+    private final String icon;
+
+    /**
+     * The number of grid columns this button spans. Defaults to 1.
+     */
+    private final int span;
 
 
     /**
@@ -127,6 +147,16 @@ public class ExtraKeyButton {
         }
 
         this.popup = popup;
+        this.icon = getStringFromJson(config, KEY_ICON);
+        int spanFromConfig = 1;
+        try {
+            if (config.has(KEY_SPAN)) {
+                spanFromConfig = config.getInt(KEY_SPAN);
+            }
+        } catch (JSONException ignored) {
+            // span remains 1; invalid JSON defaults are tolerated
+        }
+        this.span = Math.max(1, spanFromConfig);
     }
 
     private static String getDisplayString(ExtraKeysConstants.ExtraKeyDisplayMap extraKeyDisplayMap, String[] keys) {
@@ -164,6 +194,27 @@ public class ExtraKeyButton {
     @Nullable
     public ExtraKeyButton getPopup() {
         return popup;
+    }
+
+    /** Get {@link #icon} (drawable resource name), or {@code null} if no icon is set. */
+    @Nullable
+    public String getIcon() {
+        return icon;
+    }
+
+    /** Get {@link #span} (number of grid columns this button occupies). Defaults to 1. */
+    public int getSpan() {
+        return span;
+    }
+
+    /**
+     * Resolve the drawable resource id for the configured icon name. Returns 0 if no icon is set
+     * or the resource cannot be found.
+     */
+    @DrawableRes
+    public int getIconResId(@NonNull Context context) {
+        if (icon == null || icon.length() == 0) return 0;
+        return context.getResources().getIdentifier(icon, "drawable", context.getPackageName());
     }
 
     /**

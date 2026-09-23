@@ -87,6 +87,12 @@ public class RemoteExtraKeysHandler implements ExtraKeysView.IExtraKeysView {
     }
 
     private void sendKey(String key, int additionalMetaState) {
+        // Visual-only keys that have no wire representation yet — swallow them so the keypress
+        // doesn't fall through to the literal-char path and type its own name into the focused
+        // text field.
+        if (key.equals(ExtraKeysConstants.KEY_MOUSE)) {
+            return;
+        }
         Integer keyCode = ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS.get(key);
         if (keyCode != null) {
             long now = SystemClock.uptimeMillis();

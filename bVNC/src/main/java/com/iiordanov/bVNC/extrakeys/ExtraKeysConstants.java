@@ -28,6 +28,11 @@ import java.util.Map;
 
 public class ExtraKeysConstants {
 
+    /** Visual-only key used for the mouse icon in the RDP "123" grid. Has no wire representation
+     *  yet — {@link RemoteExtraKeysHandler#sendKey} swallows it to avoid typing the literal
+     *  characters "MOUSE" into a focused text field. See round 11 follow-up to wire to a real click. */
+    public static final String KEY_MOUSE = "MOUSE";
+
     /** Defines the repetitive keys that can be passed to {@link ExtraKeysView#setRepetitiveKeys(List)}. */
     public static final List<String> PRIMARY_REPETITIVE_KEYS = Arrays.asList(
         "UP", "DOWN", "LEFT", "RIGHT",
@@ -66,6 +71,9 @@ public class ExtraKeysConstants {
         put("F11", KeyEvent.KEYCODE_F11);
         put("F12", KeyEvent.KEYCODE_F12);
         put("SUPER", KeyEvent.KEYCODE_META_LEFT);
+        // RDP "123" grid additions (round 11): align with Microsoft RDP extra-keys layout.
+        put("SYSRQ", KeyEvent.KEYCODE_SYSRQ);   // screenshot / Print Screen (RDP keymapAndroid[120] = VK_PRINT)
+        put("NUMLK", KeyEvent.KEYCODE_NUM_LOCK); // "Number Keys" toggle placeholder
     }};
 
 
@@ -220,6 +228,12 @@ public class ExtraKeysConstants {
 
         put("DELETE", "DEL");
         put("BACKSPACE", "BKSP");
+
+        // RDP "123" grid additions
+        put("PRINT", "SYSRQ");
+        put("PRINT_SCREEN", "SYSRQ");
+        put("SCREENSHOT", "SYSRQ");
+        put("NUMLOCK", "NUMLK");
 
         // easier for writing in properties
         put("BACKSLASH", "\\");
