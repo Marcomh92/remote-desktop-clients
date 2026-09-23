@@ -488,6 +488,17 @@ public final class ExtraKeysView extends GridLayout {
                 button.setInsetTop(0);
                 button.setInsetBottom(0);
                 button.setBackgroundColor(mButtonBackgroundColor);
+                // Allow multi-line text wrapping. Word labels in the RDP "123" grid's right
+                // section (e.g. "Home", "Insert") use an explicit "\n" so the two halves
+                // wrap onto separate lines inside the narrow 1/9-screen cells; arrows are
+                // single-glyph and unaffected. Capped at two lines so a runaway wrap never
+                // pushes the label outside the button's vertical bounds. Off for the legacy
+                // 2-row VNC/SPICE/Opaque pager (mRdpGridMode == false) to keep labels single-
+                // line in their fixed 68dp slot.
+                if (mRdpGridMode) {
+                    button.setSingleLine(false);
+                    button.setMaxLines(2);
+                }
 
                 button.setOnClickListener(view -> {
                     performExtraKeyButtonHapticFeedback(view, buttonInfo, button);

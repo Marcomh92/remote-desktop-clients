@@ -31,13 +31,13 @@ public class ExtraKeysConstants {
     /**
      * Defines the repetitive keys that can be passed to {@link ExtraKeysView#setRepetitiveKeys(List)}.
      * <p>Holding any of these buttons on the "123" extra-keys grid repeats the keypress at the
-     * configured long-press delay, matching physical-keyboard auto-repeat behavior. Keys that
-     * represent toggle/lock state on the remote side are intentionally excluded:
+     * configured long-press delay, matching physical-keyboard auto-repeat behavior. {@code INS}
+     * repeats (toggles insert/overwrite mode on each repeat, like a held physical Insert key).
+     * Keys that represent toggle/lock state on the remote side are intentionally excluded:
      * <ul>
      *   <li>{@code SYSRQ} (Print Screen) — single discrete action, not a repeating keystroke.</li>
      *   <li>{@code NUMLK} (Number Keys) — RDP extra-keys grid uses this to toggle the right
      *       panel between special keys and the numpad; long-pressing would flicker the panel.</li>
-     *   <li>{@code INS} — toggles insert mode in most remote applications; repeat is destructive.</li>
      * </ul>
      */
     public static final List<String> PRIMARY_REPETITIVE_KEYS = Arrays.asList(
@@ -45,7 +45,7 @@ public class ExtraKeysConstants {
         "UP", "DOWN", "LEFT", "RIGHT",
         "PGUP", "PGDN", "HOME", "END",
         // Edit keys
-        "BKSP", "DEL", "ENTER",
+        "BKSP", "DEL", "ENTER", "INS",
         // Function keys
         "F1", "F2", "F3", "F4", "F5", "F6",
         "F7", "F8", "F9", "F10", "F11", "F12",

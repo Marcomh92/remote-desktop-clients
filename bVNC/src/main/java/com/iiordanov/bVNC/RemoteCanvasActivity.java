@@ -1835,34 +1835,12 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             containerH = (ch > 0) ? ch : 0; // first-pass-zero guard
         }
 
-        // Reserve vertical space below the input area for the floating keyboard toggle
-        // button so the toggle visually sits UNDERNEATH the modifier row / extra-keys
-        // grid instead of overlapping its bottom-right corner. Reservation is the toggle
-        // button's measured height + its bottom margin + an 8dp gap; applied only when
-        // (a) the input area is visible, (b) the toggle is visible, and (c) the IME is
-        // closed — when the IME is open the toggle is hidden behind it, so reserving space
-        // for it would just create a 48dp gap between the input area and the IME top.
-        int toggleReserved = 0;
-        if (lastImeHeightPx == 0
-                && rdpInputAreaContainer != null
-                && rdpInputAreaContainer.getVisibility() == View.VISIBLE
-                && keyboardToggleButton != null
-                && keyboardToggleButton.getVisibility() == View.VISIBLE) {
-            int toggleH = keyboardToggleButton.getHeight();
-            if (toggleH > 0) {
-                int gapPx = (int) (8 * getResources().getDisplayMetrics().density + 0.5f);
-                int bottomMarginPx = 0;
-                ViewGroup.LayoutParams lp = keyboardToggleButton.getLayoutParams();
-                if (lp instanceof ViewGroup.MarginLayoutParams) {
-                    bottomMarginPx = ((ViewGroup.MarginLayoutParams) lp).bottomMargin;
-                }
-                toggleReserved = toggleH + bottomMarginPx + gapPx;
-            }
-        }
-
-        // Canvas visible-height accounts for the input area AND the toggle-reserved gap so
-        // the framebuffer is not drawn behind the translated input area's bottom edge.
-        int usable = canvas.getRdpFullViewHeight() - lastImeHeightPx - containerH - toggleReserved;
+        // Canvas visible-height accounts for the input area only — no toggle-reserved gap.
+        // The keyboard toggle button is now drawn UNDER the input-area container in the
+        // FrameLayout z-order (see canvas.xml), so when the input area is visible the
+        // toggle is hidden behind it and the container sits flush against the screen
+        // bottom. The canvas is shrunk by the container height only.
+        int usable = canvas.getRdpFullViewHeight() - lastImeHeightPx - containerH;
         if (usable < 0) usable = 0;
         canvas.setVisibleDesktopHeight(usable);
         canvas.relativePan(0, 0);
@@ -1872,7 +1850,7 @@ public class RemoteCanvasActivity extends AppCompatActivity implements
             // If the window did resize, canvasH ≈ full-ime and imeOverlap ≈ 0,
             // leaving the bottom-gravity container in place with no translation.
             int imeOverlap = Math.max(0, lastImeHeightPx - (canvas.getRdpFullViewHeight() - canvasH));
-            rdpInputAreaContainer.setTranslationY(-imeOverlap - toggleReserved);
+            rdpInputAreaContainer.setTranslationY(-imeOverlap);
         }
     }
 

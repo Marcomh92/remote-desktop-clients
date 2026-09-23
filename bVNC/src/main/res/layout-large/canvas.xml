@@ -145,13 +145,6 @@
 
     </LinearLayout>
 
-    <FrameLayout
-        android:id="@+id/rdpInputAreaContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:visibility="gone" />
-
     <ImageButton
         android:id="@+id/keyboardToggleButton"
         android:layout_width="32dp"
@@ -164,6 +157,13 @@
         android:contentDescription="@string/show_keyboard"
         android:padding="8dp"
         android:src="@drawable/ic_baseline_menu_48" />
+
+    <FrameLayout
+        android:id="@+id/rdpInputAreaContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:visibility="gone" />
 
     <ImageButton
         android:id="@+id/toolbarToggleButton"

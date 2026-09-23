@@ -60,12 +60,19 @@ public class RdpExtraGridPanel extends LinearLayout implements ExtraKeysView.IEx
     private static final String TOGGLE_LABEL_NUMPAD = "Special keys";
 
     /** Right section (cols 7-9) in special-keys mode, one entry per row. Mirrors Microsoft RDP's
-     *  extra-keys grid. Col 2 of row 2 is intentionally empty so ◄/► form a diamond with ▲/▼. */
+     *  extra-keys grid. Col 2 of row 2 is intentionally empty so ◄/► form a diamond with ▲/▼.
+     *  Word labels use a {key, display} dict so the canonical dispatch key stays a single token
+     *  (HOME / PGUP / END / PGDN / INS / DEL / ENTER) while the display text wraps onto two lines
+     *  via an explicit \n inside display (e.g. "Ho" + "me"). Bare-string entries with \n would
+     *  put the newline into the dispatch key — RemoteExtraKeysHandler would then miss the
+     *  PRIMARY_KEY_CODES_FOR_STRINGS lookup and fall through to the literal-char branch,
+     *  typing "H" "o" Enter "m" "e" into the remote session. The {key, display} form is
+     *  mandatory for any wrapped label. */
     private static final String[] RIGHT_ROW_SPECIAL = {
-        "\"HOME\",{\"key\":\"UP\",\"display\":\"\\u25B2\"},\"PGUP\"",          // row 1
-        "{\"key\":\"LEFT\",\"display\":\"\\u25C0\"},\"\",{\"key\":\"RIGHT\",\"display\":\"\\u25B6\"}", // row 2
-        "\"END\",{\"key\":\"DOWN\",\"display\":\"\\u25BC\"},\"PGDN\"",          // row 3
-        "\"INS\",\"DEL\",{\"key\":\"ENTER\",\"display\":\"Enter\"}"            // row 4
+        "{\"key\":\"HOME\",\"display\":\"Ho\\nme\"},{\"key\":\"UP\",\"display\":\"\\u25B2\"},{\"key\":\"PGUP\",\"display\":\"Pg\\nUp\"}",   // row 1: Home, ▲, PgUp
+        "{\"key\":\"LEFT\",\"display\":\"\\u25C0\"},\"\",{\"key\":\"RIGHT\",\"display\":\"\\u25B6\"}",                                          // row 2
+        "{\"key\":\"END\",\"display\":\"En\\nd\"},{\"key\":\"DOWN\",\"display\":\"\\u25BC\"},{\"key\":\"PGDN\",\"display\":\"Pg\\nDn\"}",     // row 3: End, ▼, PgDn
+        "{\"key\":\"INS\",\"display\":\"Ins\\nert\"},{\"key\":\"DEL\",\"display\":\"Del\\nete\"},{\"key\":\"ENTER\",\"display\":\"Ent\\ner\"}" // row 4: Insert, Delete, Enter
     };
 
     /** Right section (cols 7-9) in numpad mode, one entry per row. Literal-char dispatch in
