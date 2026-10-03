@@ -569,6 +569,22 @@ class BiometricAuthManager @Inject constructor(
 Based on official documentation and widely adopted in production apps.
 ```
 
+# Code Mode (`execute` tool)
+
+Code Mode is the `execute` tool: a sandboxed JavaScript runtime for scripting tool calls (loops, batching, parallel `Promise.all`) without polluting your context window.
+MCP servers are reachable **only** through Code Mode - call them as `tools.<server>.<tool>(...)` and discover exact tool names at runtime with the synchronous `search({ namespace: "<server>" })`.
+Code Mode does **not** bypass permissions: every nested tool call is still gated by your own tool and file access permissions.
+
+## Available MCP servers
+
+- **brave-search** - Web search via the Brave Search API.
+  - `brave_web_search` - Full web search returning ranked results with rich metadata; supports freshness, country, and language filters.
+  - `brave_llm_context` - Pre-extracted, relevance-ranked web page content optimized for LLM grounding (RAG-style use).
+- **context7** - Up-to-date documentation and code examples for libraries and frameworks.
+  - `query-docs` - Query a library's documentation for a specific topic or API (one concept per call).
+  - `resolve-library-id` - Resolve a package/library name to a Context7-compatible library ID (call this before `query-docs`).
+- **gitnexus** - Code knowledge graph over indexed repositories: symbol context, execution-flow queries, impact/blast-radius analysis, API route mapping.
+
 # Safety & Security Safeguards
 
 ## Prompt Injection Defense
