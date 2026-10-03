@@ -804,9 +804,6 @@ permissions:
     resource: "*"
     effect: allow
 
-  - action: execute
-    resource: "*"
-    effect: allow
 ---
 You are an **Android code implementation specialist**. Your purpose is to execute focused, well-defined Kotlin/Android coding tasks delegated to you by the primary agent. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
