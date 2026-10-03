@@ -15,275 +15,790 @@ description: |
   - Answering "how does X work?"
 
   OUT OF SCOPE: Code modification, test execution, external research
-mode: subagent
-model: minimax/MiniMax-M3
-variant: adaptive
-temperature: 0.4
-steps: 70
-permission:
-  read: allow
-  list: allow
-  glob: allow
-  grep: allow
-  webfetch: allow
-  websearch: deny
-  codesearch: allow
-  todowrite: allow
-  brave-search_brave_web_search: deny
-  brave-search_brave_local_search: deny
-  brave-search_brave_video_search: deny
-  brave-search_brave_image_search: deny
-  brave-search_brave_news_search: deny
-  brave-search_brave_llm_context: deny
-  context7_resolve-library-id: allow
-  context7_query-docs: allow
-  edit: deny
-  write: deny
-  move: deny
-  remove: deny
-  mkdir: deny
-  task: deny
-  edit_plan: deny
-  bash:
-    "*": "deny"
-    "compile.bat*": "allow"
-    "test-class.bat*": "allow"
-    "test-package.bat*": "allow"
-    "test-count.bat*": "allow"
-    "test-all.bat*": "allow"
-    ".\\compile.bat*": "allow"
-    ".\\test-class.bat*": "allow"
-    ".\\test-package.bat*": "allow"
-    ".\\test-count.bat*": "allow"
-    ".\\test-all.bat*": "allow"
-    "java -version*": "allow"
-    "*java.exe -version*": "allow"
-    "& *java.exe -version*": "allow"
-    "Resolve-Path*": "allow"
-    "Split-Path*": "allow"
-    "Join-Path*": "allow"
-    "Convert-Path*": "allow"
-    "Write-Host*": "allow"
-    "Write-Verbose*": "allow"
-    "Write-Debug*": "allow"
-    "Write-Warning*": "allow"
-    "Write-Information*": "allow"
-    "Write-Progress*": "allow"
-    "Start-Sleep *": "allow"
-    "git status*": "allow"
-    "git log*": "allow"
-    "git diff*": "allow"
-    "git -C * status*": "allow"
-    "git -C * log*": "allow"
-    "git -C * diff*": "allow"
-    "pandoc -s *": "allow"
-    "pandoc -s* -t plain*": "allow"
-    "pandoc -s* -t gfm*": "allow"
-    "pandoc --version": "allow"
-    "python -c \"*PdfReader*extract_text()*": "allow"
-    "python -c \"*pdfplumber*extract_text()*": "allow"
-    "python -c \"*pdfplumber*extract_tables()*": "allow"
-    "ls *": "allow"
-    "Select-Object *": "allow"
-    "Select-Object*": "allow"
-    "Out-String*": "allow"
-    "ForEach-Object *": "allow"
-    "Select-String *": "allow"
-    "Select-Xml *": "allow"
-    "Get-ChildItem *": "allow"
-    "Sort-Object *": "allow"
-    "Where-Object*": "allow"
-    "ConvertFrom-Json*": "allow"
-    "Group-Object*": "allow"
-    "Measure-Object*": "allow"
-    "Format-Table*": "allow"
-    "Format-List*": "allow"
-    "date": "allow"
-    "echo *": "allow"
-    "env": "allow"
-    "set": "allow"
-    "Get-ChildItem Env:": "allow"
-    "ver": "allow"
-    "ls*": "allow"
-    "dir": "allow"
-    "Get-ChildItem*": "allow"
-    "Get-ChildItem -Recurse*": "allow"
-    "Get-Content*": "allow"
-    "$* = Get-Content*": "allow"
-    "$* = Get-*": "allow"
-    "$* = Select-Object*": "allow"
-    "$* = Select-String*": "allow"
-    "$* = Where-Object*": "allow"
-    "$* = ConvertFrom-Json*": "allow"
-    "$* = ForEach-Object*": "allow"
-    "$* = Sort-Object*": "allow"
-    "$* = Join-Path*": "allow"
-    "Test-Path*": "allow"
-    "Test-Path *": "allow"
-    "Out-Null *": "allow"
-    "find *": "allow"
-    "grep *": "allow"
-    "rg *": "allow"
-    "which *": "allow"
-    "where *": "allow"
-    "Get-Command*": "allow"
-    "Get-Module*": "allow"
-    "Get-InstalledModule*": "allow"
-    "cat *": "allow"
-    "less *": "allow"
-    "more *": "allow"
-    "head *": "allow"
-    "tail *": "allow"
-    "cut *": "allow"
-    "sort *": "allow"
-    "uniq *": "allow"
-    "wc *": "allow"
-    "diff *": "allow"
-    "base64 *": "allow"
-    "jq *": "allow"
-    "ps": "allow"
-    "ps *": "allow"
-    "Get-Process": "allow"
-    "Get-Process *": "allow"
-    "Get-Service*": "allow"
-    "Get-ComputerInfo*": "allow"
-    "Get-WmiObject*": "allow"
-    "Get-CimInstance*": "allow"
-    "Get-Item*": "allow"
-    "Get-ItemProperty*": "allow"
-    "Get-Location*": "allow"
-    "Push-Location*": "allow"
-    "Pop-Location": "allow"
-    "Get-Date*": "allow"
-    "Get-FileHash*": "allow"
-    "Get-Help*": "allow"
-    "Get-Variable*": "allow"
-    "Get-PSDrive*": "allow"
-    "Get-Alias*": "allow"
-    "Get-Culture*": "allow"
-    "Get-Host*": "allow"
-    "Get-TimeZone*": "allow"
-    "Get-Unique*": "allow"
-    "Get-Random*": "allow"
-    "Compare-Object*": "allow"
-    "Get-NetAdapter*": "allow"
-    "Get-NetIPAddress*": "allow"
-    "Get-NetTCPConnection*": "allow"
-    "Get-NetRoute*": "allow"
-    "Get-NetNeighbor*": "allow"
-    "Get-NetIPInterface*": "allow"
-    "Get-DnsClient*": "allow"
-    "Get-WinEvent*": "allow"
-    "Get-HotFix*": "allow"
-    "Get-ExecutionPolicy*": "allow"
-    "Get-Member*": "allow"
-    "Get-FormatData*": "allow"
-    "Get-PSSnapin*": "allow"
-    "Get-PSSession*": "allow"
-    "Get-History*": "allow"
-    "arp -a*": "allow"
-    "route print*": "allow"
-    "dotnet --list-runtimes*": "allow"
-    "tasklist*": "allow"
-    "ipconfig": "allow"
-    "nslookup*": "allow"
-    "ping*": "allow"
-    "tracert*": "allow"
-    "netstat*": "allow"
-    "Test-Connection*": "allow"
-    "Test-NetConnection*": "allow"
-    "Resolve-DnsName*": "allow"
-    "systeminfo*": "allow"
-    "npm test*": "allow"
-    "npm run *": "allow"
-    "npm audit": "allow"
-    "npm list*": "allow"
-    "npm outdated": "allow"
-    "npm config*": "allow"
-    "npm view *": "allow"
-    "npm info *": "allow"
-    "yarn test*": "allow"
-    "yarn run *": "allow"
-    "yarn build*": "allow"
-    "yarn lint*": "allow"
-    "yarn info *": "allow"
-    "yarn config*": "allow"
-    "pnpm test*": "allow"
-    "pnpm run *": "allow"
-    "pnpm build*": "allow"
-    "pnpm lint*": "allow"
-    "pnpm config*": "allow"
-    "pnpm view *": "allow"
-    "pnpm outdated": "allow"
-    "dotnet build*": "allow"
-    "dotnet test*": "allow"
-    "dotnet --version": "allow"
-    "dotnet --list-sdks": "allow"
-    "dotnet --info": "allow"
-    "dotnet format*": "allow"
-    "dotnet restore*": "allow"
-    "node --version*": "allow"
-    "node -v*": "allow"
-    "npm --version*": "allow"
-    "python --version*": "allow"
-    "pip --version*": "allow"
-    "pip list*": "allow"
-    "pip show*": "allow"
-    "go version*": "allow"
-    "rustc --version*": "allow"
-    "cargo --version*": "allow"
-    "python -m pytest*": "allow"
-    "pytest*": "allow"
-    "python -m unittest*": "allow"
-    "cargo test*": "allow"
-    "cargo build*": "allow"
-    "cargo check*": "allow"
-    "cargo clippy*": "allow"
-    "cargo fmt*": "allow"
-    "go test*": "allow"
-    "go build*": "allow"
-    "go fmt*": "allow"
-    "go vet*": "allow"
-    "tsc*": "allow"
-    "tsc --noEmit": "allow"
-    "vite*": "allow"
-    "webpack*": "allow"
-    "eslint*": "allow"
-    "prettier*": "allow"
-    "stylelint*": "allow"
-    "biome *": "allow"
-    "jest*": "allow"
-    "vitest*": "allow"
-    "playwright test*": "allow"
-    "cypress run*": "allow"
-    "mocha*": "allow"
-    "karma test*": "allow"
-    "ava*": "allow"
-  opencode-agent-skills:
-    project-context-router: deny
-    project-context-lite: deny
-    repo-fork-manager: deny
-    skill-creator: deny
-    pandoc-read-epub: deny
-    pandoc-read-latex: deny
-    plannotator*: deny
-    opencode-local-plugins: deny
-    gitnexus-refactoring: deny
-    powershell-testing: deny
-    bun-typescript-testing: deny
-    node-testing: deny
-    project-docs-architect: deny
-    spring-boot-testing-kotlin: deny
-    android-compose-ui-testing: deny
-    android-unit-testing: deny
-    bash-permission-policy: deny
-    opencode-custom-tools: deny
-    stitch-*: deny
-    "*": allow
-  read_skill_file: allow
-  run_skill_script: allow
----
 
+mode: subagent
+model: minimax-coding-plan/MiniMax-M3.1-Flash-Preview#medium
+steps: 70
+request:
+  body:
+    temperature: 0.4
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: webfetch
+    resource: "*"
+    effect: allow
+  - action: websearch
+    resource: "*"
+    effect: deny
+
+  - action: brave-search_brave_web_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_local_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_video_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_image_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_news_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_llm_context
+    resource: "*"
+    effect: deny
+  - action: context7_resolve-library-id
+    resource: "*"
+    effect: allow
+  - action: context7_query-docs
+    resource: "*"
+    effect: allow
+
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: move
+    resource: "*"
+    effect: deny
+  - action: remove
+    resource: "*"
+    effect: deny
+  - action: mkdir
+    resource: "*"
+    effect: deny
+
+  - action: subagent
+    resource: "*"
+    effect: deny
+
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "compile.bat*"
+    effect: allow
+  - action: shell
+    resource: "test-class.bat*"
+    effect: allow
+  - action: shell
+    resource: "test-package.bat*"
+    effect: allow
+  - action: shell
+    resource: "test-count.bat*"
+    effect: allow
+  - action: shell
+    resource: "test-all.bat*"
+    effect: allow
+  - action: shell
+    resource: ".\\compile.bat*"
+    effect: allow
+  - action: shell
+    resource: ".\\test-class.bat*"
+    effect: allow
+  - action: shell
+    resource: ".\\test-package.bat*"
+    effect: allow
+  - action: shell
+    resource: ".\\test-count.bat*"
+    effect: allow
+  - action: shell
+    resource: ".\\test-all.bat*"
+    effect: allow
+  - action: shell
+    resource: "java -version*"
+    effect: allow
+  - action: shell
+    resource: "*java.exe -version*"
+    effect: allow
+  - action: shell
+    resource: "& *java.exe -version*"
+    effect: allow
+  - action: shell
+    resource: "Resolve-Path*"
+    effect: allow
+  - action: shell
+    resource: "Split-Path*"
+    effect: allow
+  - action: shell
+    resource: "Join-Path*"
+    effect: allow
+  - action: shell
+    resource: "Convert-Path*"
+    effect: allow
+  - action: shell
+    resource: "Write-Host*"
+    effect: allow
+  - action: shell
+    resource: "Write-Verbose*"
+    effect: allow
+  - action: shell
+    resource: "Write-Debug*"
+    effect: allow
+  - action: shell
+    resource: "Write-Warning*"
+    effect: allow
+  - action: shell
+    resource: "Write-Information*"
+    effect: allow
+  - action: shell
+    resource: "Write-Progress*"
+    effect: allow
+  - action: shell
+    resource: "Start-Sleep *"
+    effect: allow
+  - action: shell
+    resource: "git status*"
+    effect: allow
+  - action: shell
+    resource: "git log*"
+    effect: allow
+  - action: shell
+    resource: "git diff*"
+    effect: allow
+  - action: shell
+    resource: "git -C * status*"
+    effect: allow
+  - action: shell
+    resource: "git -C * log*"
+    effect: allow
+  - action: shell
+    resource: "git -C * diff*"
+    effect: allow
+  - action: shell
+    resource: "pandoc -s *"
+    effect: allow
+  - action: shell
+    resource: "pandoc -s* -t plain*"
+    effect: allow
+  - action: shell
+    resource: "pandoc -s* -t gfm*"
+    effect: allow
+  - action: shell
+    resource: "pandoc --version"
+    effect: allow
+  - action: shell
+    resource: "python -c \"*PdfReader*extract_text()*"
+    effect: allow
+  - action: shell
+    resource: "python -c \"*pdfplumber*extract_text()*"
+    effect: allow
+  - action: shell
+    resource: "python -c \"*pdfplumber*extract_tables()*"
+    effect: allow
+  - action: shell
+    resource: "ls *"
+    effect: allow
+  - action: shell
+    resource: "Select-Object *"
+    effect: allow
+  - action: shell
+    resource: "Select-Object*"
+    effect: allow
+  - action: shell
+    resource: "Out-String*"
+    effect: allow
+  - action: shell
+    resource: "ForEach-Object *"
+    effect: allow
+  - action: shell
+    resource: "Select-String *"
+    effect: allow
+  - action: shell
+    resource: "Select-Xml *"
+    effect: allow
+  - action: shell
+    resource: "Get-ChildItem *"
+    effect: allow
+  - action: shell
+    resource: "Sort-Object *"
+    effect: allow
+  - action: shell
+    resource: "Where-Object*"
+    effect: allow
+  - action: shell
+    resource: "ConvertFrom-Json*"
+    effect: allow
+  - action: shell
+    resource: "Group-Object*"
+    effect: allow
+  - action: shell
+    resource: "Measure-Object*"
+    effect: allow
+  - action: shell
+    resource: "Format-Table*"
+    effect: allow
+  - action: shell
+    resource: "Format-List*"
+    effect: allow
+  - action: shell
+    resource: date
+    effect: allow
+  - action: shell
+    resource: "echo *"
+    effect: allow
+  - action: shell
+    resource: env
+    effect: allow
+  - action: shell
+    resource: set
+    effect: allow
+  - action: shell
+    resource: "Get-ChildItem Env:"
+    effect: allow
+  - action: shell
+    resource: ver
+    effect: allow
+  - action: shell
+    resource: "ls*"
+    effect: allow
+  - action: shell
+    resource: dir
+    effect: allow
+  - action: shell
+    resource: "Get-ChildItem*"
+    effect: allow
+  - action: shell
+    resource: "Get-ChildItem -Recurse*"
+    effect: allow
+  - action: shell
+    resource: "Get-Content*"
+    effect: allow
+  - action: shell
+    resource: "$* = Get-Content*"
+    effect: allow
+  - action: shell
+    resource: "$* = Get-*"
+    effect: allow
+  - action: shell
+    resource: "$* = Select-Object*"
+    effect: allow
+  - action: shell
+    resource: "$* = Select-String*"
+    effect: allow
+  - action: shell
+    resource: "$* = Where-Object*"
+    effect: allow
+  - action: shell
+    resource: "$* = ConvertFrom-Json*"
+    effect: allow
+  - action: shell
+    resource: "$* = ForEach-Object*"
+    effect: allow
+  - action: shell
+    resource: "$* = Sort-Object*"
+    effect: allow
+  - action: shell
+    resource: "$* = Join-Path*"
+    effect: allow
+  - action: shell
+    resource: "Test-Path*"
+    effect: allow
+  - action: shell
+    resource: "Test-Path *"
+    effect: allow
+  - action: shell
+    resource: "Out-Null *"
+    effect: allow
+  - action: shell
+    resource: "find *"
+    effect: allow
+  - action: shell
+    resource: "grep *"
+    effect: allow
+  - action: shell
+    resource: "rg *"
+    effect: allow
+  - action: shell
+    resource: "which *"
+    effect: allow
+  - action: shell
+    resource: "where *"
+    effect: allow
+  - action: shell
+    resource: "Get-Command*"
+    effect: allow
+  - action: shell
+    resource: "Get-Module*"
+    effect: allow
+  - action: shell
+    resource: "Get-InstalledModule*"
+    effect: allow
+  - action: shell
+    resource: "cat *"
+    effect: allow
+  - action: shell
+    resource: "less *"
+    effect: allow
+  - action: shell
+    resource: "more *"
+    effect: allow
+  - action: shell
+    resource: "head *"
+    effect: allow
+  - action: shell
+    resource: "tail *"
+    effect: allow
+  - action: shell
+    resource: "cut *"
+    effect: allow
+  - action: shell
+    resource: "sort *"
+    effect: allow
+  - action: shell
+    resource: "uniq *"
+    effect: allow
+  - action: shell
+    resource: "wc *"
+    effect: allow
+  - action: shell
+    resource: "diff *"
+    effect: allow
+  - action: shell
+    resource: "base64 *"
+    effect: allow
+  - action: shell
+    resource: "jq *"
+    effect: allow
+  - action: shell
+    resource: ps
+    effect: allow
+  - action: shell
+    resource: "ps *"
+    effect: allow
+  - action: shell
+    resource: Get-Process
+    effect: allow
+  - action: shell
+    resource: "Get-Process *"
+    effect: allow
+  - action: shell
+    resource: "Get-Service*"
+    effect: allow
+  - action: shell
+    resource: "Get-ComputerInfo*"
+    effect: allow
+  - action: shell
+    resource: "Get-WmiObject*"
+    effect: allow
+  - action: shell
+    resource: "Get-CimInstance*"
+    effect: allow
+  - action: shell
+    resource: "Get-Item*"
+    effect: allow
+  - action: shell
+    resource: "Get-ItemProperty*"
+    effect: allow
+  - action: shell
+    resource: "Get-Location*"
+    effect: allow
+  - action: shell
+    resource: "Push-Location*"
+    effect: allow
+  - action: shell
+    resource: Pop-Location
+    effect: allow
+  - action: shell
+    resource: "Get-Date*"
+    effect: allow
+  - action: shell
+    resource: "Get-FileHash*"
+    effect: allow
+  - action: shell
+    resource: "Get-Help*"
+    effect: allow
+  - action: shell
+    resource: "Get-Variable*"
+    effect: allow
+  - action: shell
+    resource: "Get-PSDrive*"
+    effect: allow
+  - action: shell
+    resource: "Get-Alias*"
+    effect: allow
+  - action: shell
+    resource: "Get-Culture*"
+    effect: allow
+  - action: shell
+    resource: "Get-Host*"
+    effect: allow
+  - action: shell
+    resource: "Get-TimeZone*"
+    effect: allow
+  - action: shell
+    resource: "Get-Unique*"
+    effect: allow
+  - action: shell
+    resource: "Get-Random*"
+    effect: allow
+  - action: shell
+    resource: "Compare-Object*"
+    effect: allow
+  - action: shell
+    resource: "Get-NetAdapter*"
+    effect: allow
+  - action: shell
+    resource: "Get-NetIPAddress*"
+    effect: allow
+  - action: shell
+    resource: "Get-NetTCPConnection*"
+    effect: allow
+  - action: shell
+    resource: "Get-NetRoute*"
+    effect: allow
+  - action: shell
+    resource: "Get-NetNeighbor*"
+    effect: allow
+  - action: shell
+    resource: "Get-NetIPInterface*"
+    effect: allow
+  - action: shell
+    resource: "Get-DnsClient*"
+    effect: allow
+  - action: shell
+    resource: "Get-WinEvent*"
+    effect: allow
+  - action: shell
+    resource: "Get-HotFix*"
+    effect: allow
+  - action: shell
+    resource: "Get-ExecutionPolicy*"
+    effect: allow
+  - action: shell
+    resource: "Get-Member*"
+    effect: allow
+  - action: shell
+    resource: "Get-FormatData*"
+    effect: allow
+  - action: shell
+    resource: "Get-PSSnapin*"
+    effect: allow
+  - action: shell
+    resource: "Get-PSSession*"
+    effect: allow
+  - action: shell
+    resource: "Get-History*"
+    effect: allow
+  - action: shell
+    resource: "arp -a*"
+    effect: allow
+  - action: shell
+    resource: "route print*"
+    effect: allow
+  - action: shell
+    resource: "dotnet --list-runtimes*"
+    effect: allow
+  - action: shell
+    resource: "tasklist*"
+    effect: allow
+  - action: shell
+    resource: ipconfig
+    effect: allow
+  - action: shell
+    resource: "nslookup*"
+    effect: allow
+  - action: shell
+    resource: "ping*"
+    effect: allow
+  - action: shell
+    resource: "tracert*"
+    effect: allow
+  - action: shell
+    resource: "netstat*"
+    effect: allow
+  - action: shell
+    resource: "Test-Connection*"
+    effect: allow
+  - action: shell
+    resource: "Test-NetConnection*"
+    effect: allow
+  - action: shell
+    resource: "Resolve-DnsName*"
+    effect: allow
+  - action: shell
+    resource: "systeminfo*"
+    effect: allow
+  - action: shell
+    resource: "npm test*"
+    effect: allow
+  - action: shell
+    resource: "npm run *"
+    effect: allow
+  - action: shell
+    resource: "npm audit"
+    effect: allow
+  - action: shell
+    resource: "npm list*"
+    effect: allow
+  - action: shell
+    resource: "npm outdated"
+    effect: allow
+  - action: shell
+    resource: "npm config*"
+    effect: allow
+  - action: shell
+    resource: "npm view *"
+    effect: allow
+  - action: shell
+    resource: "npm info *"
+    effect: allow
+  - action: shell
+    resource: "yarn test*"
+    effect: allow
+  - action: shell
+    resource: "yarn run *"
+    effect: allow
+  - action: shell
+    resource: "yarn build*"
+    effect: allow
+  - action: shell
+    resource: "yarn lint*"
+    effect: allow
+  - action: shell
+    resource: "yarn info *"
+    effect: allow
+  - action: shell
+    resource: "yarn config*"
+    effect: allow
+  - action: shell
+    resource: "pnpm test*"
+    effect: allow
+  - action: shell
+    resource: "pnpm run *"
+    effect: allow
+  - action: shell
+    resource: "pnpm build*"
+    effect: allow
+  - action: shell
+    resource: "pnpm lint*"
+    effect: allow
+  - action: shell
+    resource: "pnpm config*"
+    effect: allow
+  - action: shell
+    resource: "pnpm view *"
+    effect: allow
+  - action: shell
+    resource: "pnpm outdated"
+    effect: allow
+  - action: shell
+    resource: "dotnet build*"
+    effect: allow
+  - action: shell
+    resource: "dotnet test*"
+    effect: allow
+  - action: shell
+    resource: "dotnet --version"
+    effect: allow
+  - action: shell
+    resource: "dotnet --list-sdks"
+    effect: allow
+  - action: shell
+    resource: "dotnet --info"
+    effect: allow
+  - action: shell
+    resource: "dotnet format*"
+    effect: allow
+  - action: shell
+    resource: "dotnet restore*"
+    effect: allow
+  - action: shell
+    resource: "node --version*"
+    effect: allow
+  - action: shell
+    resource: "node -v*"
+    effect: allow
+  - action: shell
+    resource: "npm --version*"
+    effect: allow
+  - action: shell
+    resource: "python --version*"
+    effect: allow
+  - action: shell
+    resource: "pip --version*"
+    effect: allow
+  - action: shell
+    resource: "pip list*"
+    effect: allow
+  - action: shell
+    resource: "pip show*"
+    effect: allow
+  - action: shell
+    resource: "go version*"
+    effect: allow
+  - action: shell
+    resource: "rustc --version*"
+    effect: allow
+  - action: shell
+    resource: "cargo --version*"
+    effect: allow
+  - action: shell
+    resource: "python -m pytest*"
+    effect: allow
+  - action: shell
+    resource: "pytest*"
+    effect: allow
+  - action: shell
+    resource: "python -m unittest*"
+    effect: allow
+  - action: shell
+    resource: "cargo test*"
+    effect: allow
+  - action: shell
+    resource: "cargo build*"
+    effect: allow
+  - action: shell
+    resource: "cargo check*"
+    effect: allow
+  - action: shell
+    resource: "cargo clippy*"
+    effect: allow
+  - action: shell
+    resource: "cargo fmt*"
+    effect: allow
+  - action: shell
+    resource: "go test*"
+    effect: allow
+  - action: shell
+    resource: "go build*"
+    effect: allow
+  - action: shell
+    resource: "go fmt*"
+    effect: allow
+  - action: shell
+    resource: "go vet*"
+    effect: allow
+  - action: shell
+    resource: "tsc*"
+    effect: allow
+  - action: shell
+    resource: "tsc --noEmit"
+    effect: allow
+  - action: shell
+    resource: "vite*"
+    effect: allow
+  - action: shell
+    resource: "webpack*"
+    effect: allow
+  - action: shell
+    resource: "eslint*"
+    effect: allow
+  - action: shell
+    resource: "prettier*"
+    effect: allow
+  - action: shell
+    resource: "stylelint*"
+    effect: allow
+  - action: shell
+    resource: "biome *"
+    effect: allow
+  - action: shell
+    resource: "jest*"
+    effect: allow
+  - action: shell
+    resource: "vitest*"
+    effect: allow
+  - action: shell
+    resource: "playwright test*"
+    effect: allow
+  - action: shell
+    resource: "cypress run*"
+    effect: allow
+  - action: shell
+    resource: "mocha*"
+    effect: allow
+  - action: shell
+    resource: "karma test*"
+    effect: allow
+  - action: shell
+    resource: "ava*"
+    effect: allow
+
+  - action: opencode-agent-skills
+    resource: project-context-router
+    effect: deny
+  - action: opencode-agent-skills
+    resource: project-context-lite
+    effect: deny
+  - action: opencode-agent-skills
+    resource: repo-fork-manager
+    effect: deny
+  - action: opencode-agent-skills
+    resource: skill-creator
+    effect: deny
+  - action: opencode-agent-skills
+    resource: pandoc-read-epub
+    effect: deny
+  - action: opencode-agent-skills
+    resource: pandoc-read-latex
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "plannotator*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: opencode-local-plugins
+    effect: deny
+  - action: opencode-agent-skills
+    resource: gitnexus-refactoring
+    effect: deny
+  - action: opencode-agent-skills
+    resource: powershell-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: bun-typescript-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: node-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: project-docs-architect
+    effect: deny
+  - action: opencode-agent-skills
+    resource: spring-boot-testing-kotlin
+    effect: deny
+  - action: opencode-agent-skills
+    resource: android-compose-ui-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: android-unit-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: bash-permission-policy
+    effect: deny
+  - action: opencode-agent-skills
+    resource: opencode-custom-tools
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "stitch*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "ponytail*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "*"
+    effect: allow
+
+  - action: read_skill_file
+    resource: "*"
+    effect: allow
+  - action: run_skill_script
+    resource: "*"
+    effect: allow
+
+  - action: execute
+    resource: "*"
+    effect: allow
+---
 You are a **Code Investigation Specialist**. Your purpose is to EXPLORE and UNDERSTAND the codebase, then explain it clearly to the primary agent. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
 # MANDATORY COMPLIANCE (Complete FIRST)

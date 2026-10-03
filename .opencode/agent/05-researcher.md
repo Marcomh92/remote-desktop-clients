@@ -18,61 +18,151 @@ description: |
   - Emerging technologies
 
   OUT OF SCOPE: Code modification, test execution, codebase exploration, implementation work.
-mode: subagent
-model: minimax/MiniMax-M3
-variant: adaptive
-temperature: 0.7
-steps: 45
-permission:
-  bash: deny
-  read: allow
-  list: allow
-  glob: allow
-  grep: allow
-  webfetch: allow
-  websearch: allow
-  codesearch: allow
-  todowrite: allow
-  brave-search_brave_web_search: allow
-  brave-search_brave_local_search: deny
-  brave-search_brave_video_search: deny
-  brave-search_brave_image_search: deny
-  brave-search_brave_news_search: deny
-  brave-search_brave_llm_context: allow
-  context7_resolve-library-id: allow
-  context7_query-docs: allow
-  edit: deny
-  write: deny
-  move: deny
-  remove: deny
-  mkdir: deny
-  task: deny
-  edit_plan: deny
-  opencode-agent-skills:
-    project-context-router: deny
-    project-context-lite: deny
-    repo-fork-manager: deny
-    skill-creator: deny
-    pandoc-read-epub: deny
-    pandoc-read-latex: deny
-    plannotator*: deny
-    opencode-local-plugins: deny
-    powershell-syntax-verifier: deny
-    android-*: deny
-    gitnexus*: deny
-    powershell-testing: deny
-    bun-typescript-testing: deny
-    node-testing: deny
-    project-docs-architect: deny
-    spring-boot-testing-kotlin: deny
-    bash-permission-policy: deny
-    opencode-custom-tools: deny
-    stitch-*: deny
-    "*": allow
-  read_skill_file: allow
-  run_skill_script: allow
----
 
+mode: subagent
+model: minimax-coding-plan/MiniMax-M3.1-Flash-Preview#medium
+steps: 45
+request:
+  body:
+    temperature: 0.7
+permissions:
+  - action: shell
+    resource: "*"
+    effect: deny
+
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: webfetch
+    resource: "*"
+    effect: allow
+  - action: websearch
+    resource: "*"
+    effect: deny
+
+  - action: brave-search_brave_web_search
+    resource: "*"
+    effect: allow
+  - action: brave-search_brave_local_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_video_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_image_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_news_search
+    resource: "*"
+    effect: deny
+  - action: brave-search_brave_llm_context
+    resource: "*"
+    effect: allow
+  - action: context7_resolve-library-id
+    resource: "*"
+    effect: allow
+  - action: context7_query-docs
+    resource: "*"
+    effect: allow
+
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: move
+    resource: "*"
+    effect: deny
+  - action: remove
+    resource: "*"
+    effect: deny
+  - action: mkdir
+    resource: "*"
+    effect: deny
+
+  - action: subagent
+    resource: "*"
+    effect: deny
+
+  - action: opencode-agent-skills
+    resource: project-context-router
+    effect: deny
+  - action: opencode-agent-skills
+    resource: project-context-lite
+    effect: deny
+  - action: opencode-agent-skills
+    resource: repo-fork-manager
+    effect: deny
+  - action: opencode-agent-skills
+    resource: skill-creator
+    effect: deny
+  - action: opencode-agent-skills
+    resource: pandoc-read-epub
+    effect: deny
+  - action: opencode-agent-skills
+    resource: pandoc-read-latex
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "plannotator*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: opencode-local-plugins
+    effect: deny
+  - action: opencode-agent-skills
+    resource: powershell-syntax-verifier
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "android-*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "gitnexus*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: powershell-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: bun-typescript-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: node-testing
+    effect: deny
+  - action: opencode-agent-skills
+    resource: project-docs-architect
+    effect: deny
+  - action: opencode-agent-skills
+    resource: spring-boot-testing-kotlin
+    effect: deny
+  - action: opencode-agent-skills
+    resource: bash-permission-policy
+    effect: deny
+  - action: opencode-agent-skills
+    resource: opencode-custom-tools
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "stitch*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "ponytail*"
+    effect: deny
+  - action: opencode-agent-skills
+    resource: "*"
+    effect: allow
+
+  - action: read_skill_file
+    resource: "*"
+    effect: allow
+  - action: run_skill_script
+    resource: "*"
+    effect: allow
+
+  - action: execute
+    resource: "*"
+    effect: deny
+---
 You are a **Library/API Research Specialist**. Your purpose is to research libraries, APIs, frameworks, and technical solutions, then provide synthesized findings with sources to the primary agent. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
 # MANDATORY COMPLIANCE (Complete FIRST)
