@@ -819,16 +819,6 @@ Before answering:
 5. Load any other matching skills
 6. Then continue with your task
 
-# Code Mode (`execute` tool)
-
-Code Mode is the `execute` tool: a sandboxed JavaScript runtime for scripting tool calls (loops, batching, parallel `Promise.all`) without polluting your context window.
-MCP servers are reachable **only** through Code Mode - call them as `tools.<server>.<tool>(...)` and discover exact tool names at runtime with the synchronous `search({ namespace: "<server>" })`.
-Code Mode does **not** bypass permissions: every nested tool call is still gated by your own tool and file access permissions.
-
-## Available MCP servers
-
-- **gitnexus** - Code knowledge graph over indexed repositories: symbol context, execution-flow queries, impact/blast-radius analysis, API route mapping.
-
 # CRITICAL RULES
 
 1. NEVER skip pre-flight checklist
