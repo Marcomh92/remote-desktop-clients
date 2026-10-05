@@ -35,9 +35,6 @@ permissions:
   - action: webfetch
     resource: "*"
     effect: allow
-  - action: websearch
-    resource: "*"
-    effect: deny
 
   - action: brave-search_brave_web_search
     resource: "*"
@@ -74,6 +71,16 @@ permissions:
     resource: "*"
     effect: deny
   - action: mkdir
+    resource: "*"
+    effect: deny
+    
+  - action: gitnexus_context
+    resource: "*"
+    effect: allow
+  - action: gitnexus_impact
+    resource: "*"
+    effect: allow
+  - action: gitnexus_rename
     resource: "*"
     effect: deny
 
@@ -723,78 +730,25 @@ permissions:
   - action: shell
     resource: "ava*"
     effect: allow
-
-  - action: opencode-agent-skills
-    resource: project-context-router
-    effect: deny
-  - action: opencode-agent-skills
-    resource: project-context-lite
-    effect: deny
-  - action: opencode-agent-skills
-    resource: repo-fork-manager
-    effect: deny
-  - action: opencode-agent-skills
-    resource: skill-creator
-    effect: deny
-  - action: opencode-agent-skills
-    resource: pandoc-read-epub
-    effect: deny
-  - action: opencode-agent-skills
-    resource: pandoc-read-latex
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "plannotator*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: opencode-local-plugins
-    effect: deny
-  - action: opencode-agent-skills
-    resource: gitnexus-refactoring
-    effect: deny
-  - action: opencode-agent-skills
-    resource: powershell-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: bun-typescript-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: node-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: project-docs-architect
-    effect: deny
-  - action: opencode-agent-skills
-    resource: spring-boot-testing-kotlin
-    effect: deny
-  - action: opencode-agent-skills
-    resource: android-compose-ui-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: android-unit-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: bash-permission-policy
-    effect: deny
-  - action: opencode-agent-skills
-    resource: opencode-custom-tools
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "stitch*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "ponytail*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "*"
+    
+  - action: skill
+    resource: "find-docs"
     effect: allow
-
-  - action: read_skill_file
-    resource: "*"
+  - action: skill
+    resource: "gitnexus-*"
     effect: allow
-  - action: run_skill_script
-    resource: "*"
+  - action: skill
+    resource: "gitnexus-init"
+    effect: deny
+  - action: skill
+    resource: "gitnexus-refactoring"
+    effect: deny
+  - action: skill
+    resource: "android-*"
     effect: allow
-
+  - action: skill
+    resource: "android-feature-generator"
+    effect: deny
 ---
 You are a **Code Investigation Specialist**. Your purpose is to EXPLORE and UNDERSTAND the codebase, then explain it clearly to the primary agent. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
@@ -810,7 +764,7 @@ Skip these steps = incorrect execution.
 ## SKILL LOADING PROTOCOL
 
 Before answering:
-1. Run: use_skill({"skill": "auto-router"})
+1. Run: skill({"id": "auto-router"})
 2. Let auto-router analyze request and load relevant skills
 3. Follow loaded skill instructions
 4. Load matching skills

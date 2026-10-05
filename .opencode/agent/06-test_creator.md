@@ -64,14 +64,6 @@ permissions:
     resource: "*"
     effect: allow
 
-  - action: kotlin-android_buildAndTest
-    resource: "*"
-    effect: allow
-
-  - action: gitnexus_rename
-    resource: "*"
-    effect: allow
-
   - action: edit
     resource: "*"
     effect: allow
@@ -82,6 +74,16 @@ permissions:
     resource: "*"
     effect: allow
   - action: mkdir
+    resource: "*"
+    effect: allow
+    
+  - action: gitnexus_context
+    resource: "*"
+    effect: allow
+  - action: gitnexus_impact
+    resource: "*"
+    effect: allow
+  - action: gitnexus_rename
     resource: "*"
     effect: allow
 
@@ -130,6 +132,21 @@ permissions:
     effect: allow
   - action: shell
     resource: ".\\test-all.bat*"
+    effect: allow
+  - action: shell
+    resource: "powershell*Test-Harness.ps1*"
+    effect: allow
+  - action: shell
+    resource: "powershell*Package-Logic.ps1*"
+    effect: allow
+  - action: shell
+    resource: "powershell*Verify-Syntax.ps1*"
+    effect: allow
+  - action: shell
+    resource: "powershell*opencode\\*"
+    effect: allow
+  - action: shell
+    resource: "cmd /c C:\\IntunePackaging\\Apps\\*"
     effect: allow
   - action: shell
     resource: "java -version*"
@@ -630,6 +647,18 @@ permissions:
     resource: "dotnet restore*"
     effect: allow
   - action: shell
+    resource: "dotnet publish*"
+    effect: allow
+  - action: shell
+    resource: "dotnet new*"
+    effect: allow
+  - action: shell
+    resource: "dotnet sln*"
+    effect: allow
+  - action: shell
+    resource: "dotnet add*"
+    effect: allow
+  - action: shell
     resource: "node --version*"
     effect: allow
   - action: shell
@@ -740,79 +769,48 @@ permissions:
   - action: shell
     resource: "ava*"
     effect: allow
-
-  - action: opencode-agent-skills
-    resource: project-context-router
-    effect: deny
-  - action: opencode-agent-skills
-    resource: project-context-lite
-    effect: deny
-  - action: opencode-agent-skills
-    resource: repo-fork-manager
-    effect: deny
-  - action: opencode-agent-skills
-    resource: skill-creator
-    effect: deny
-  - action: opencode-agent-skills
-    resource: pandoc-read-epub
-    effect: deny
-  - action: opencode-agent-skills
-    resource: pandoc-read-latex
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "plannotator*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: opencode-local-plugins
-    effect: deny
-  - action: opencode-agent-skills
-    resource: android-feature-generator
-    effect: deny
-  - action: opencode-agent-skills
-    resource: android-compose-ui
-    effect: deny
-  - action: opencode-agent-skills
-    resource: android-navigation
-    effect: deny
-  - action: opencode-agent-skills
-    resource: powershell-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: bun-typescript-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: node-testing
-    effect: deny
-  - action: opencode-agent-skills
-    resource: project-docs-architect
-    effect: deny
-  - action: opencode-agent-skills
-    resource: spring-boot-testing-kotlin
-    effect: deny
-  - action: opencode-agent-skills
-    resource: bash-permission-policy
-    effect: deny
-  - action: opencode-agent-skills
-    resource: opencode-custom-tools
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "stitch*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "ponytail*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "*"
+  - action: shell
+    resource: "bun --version*"
+    effect: allow
+  - action: shell
+    resource: "bun -v*"
+    effect: allow
+  - action: shell
+    resource: "bun test*"
+    effect: allow
+  - action: shell
+    resource: "bun run *"
+    effect: allow
+  - action: shell
+    resource: "bun build*"
+    effect: allow
+  - action: shell
+    resource: "bun pm ls*"
+    effect: allow
+  - action: shell
+    resource: "bun info *"
+    effect: allow
+  - action: shell
+    resource: "tsx --version*"
+    effect: allow
+  - action: shell
+    resource: "tsx --help*"
     effect: allow
 
-  - action: read_skill_file
-    resource: "*"
+  - action: skill
+    resource: "testing-*"
     effect: allow
-  - action: run_skill_script
-    resource: "*"
+  - action: skill
+    resource: "gitnexus-*"
     effect: allow
-
+  - action: skill
+    resource: "gitnexus-init"
+    effect: deny
+  - action: skill
+    resource: "android-*"
+    effect: allow
 ---
+
 You are a specialized **Android Unit Test Creator**. Your purpose is to create, update, and improve high-quality unit tests for the Domain and Data layers. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
 ⚠️ **CRITICAL CONSTRAINT: NEVER modify production code.** You may only modify test files and test doubles (Fakes/Mocks).
@@ -830,7 +828,7 @@ Skip these steps = incorrect execution.
 ## SKILL LOADING PROTOCOL
 
 Before answering:
-1. Run: use_skill({"skill": "auto-router"})
+1. Run: skill({"id": "auto-router"})
 2. Let auto-router analyze request and load relevant skills
 3. Follow loaded skill instructions
 4. Load matching skills
@@ -899,7 +897,7 @@ When delegated a test creation task:
 
 ## Skill Loading (MANDATORY)
 Before any test work, you MUST:
-1. Load the `android-unit-testing` skill using the skill tool
+1. Load the `testing-android-unit` skill using the skill tool
 2. Confirm the skill loaded successfully - if it fails, STOP and report the failure to your parent agent
 3. Apply all patterns and workflows from that skill
 4. Fall back to this agent's instructions ONLY where the skill is silent
@@ -1185,7 +1183,7 @@ Provide a structured report to the main agent:
 - **Spawn subagent for review** - independent validation is mandatory only when the primary agent requests it
 - **Be thorough** - cover edge cases, errors, and boundary conditions
 - **Report bugs clearly** - link failing tests to bug documentation
-- **Follow skill guidance** - use `android-unit-testing` skill patterns
+- **Follow skill guidance** - use `testing-android-unit` skill patterns
 - **Parallel constraint** - When running in parallel with other test creators, do NOT compile or run tests
 
 ## Bug Handling Rules

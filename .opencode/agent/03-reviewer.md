@@ -22,7 +22,7 @@ description: |
   3. Any specific areas of concern
 
 mode: subagent
-model: minimax-coding-plan/MiniMax-M3.1-Flash-Preview#max
+model: minimax/MiniMax-M3#thinking
 steps: 70
 request:
   body:
@@ -64,15 +64,8 @@ permissions:
     effect: deny
   - action: context7_resolve-library-id
     resource: "*"
-    effect: deny
-  - action: context7_query-docs
-    resource: "*"
-    effect: deny
-
-  - action: kotlin-android_buildAndTest
-    resource: "*"
     effect: allow
-  - action: kotlin-android_analyzeCodeQuality
+  - action: context7_query-docs
     resource: "*"
     effect: allow
 
@@ -88,10 +81,26 @@ permissions:
   - action: mkdir
     resource: "*"
     effect: deny
+    
+  - action: gitnexus_context
+    resource: "*"
+    effect: allow
+  - action: gitnexus_impact
+    resource: "*"
+    effect: allow
+  - action: gitnexus_rename
+    resource: "*"
+    effect: deny
 
   - action: subagent
     resource: "*"
     effect: deny
+  - action: subagent
+    resource: 04-investigator
+    effect: allow
+  - action: subagent
+    resource: 05-researcher
+    effect: allow
 
   - action: shell
     resource: "*"
@@ -125,6 +134,21 @@ permissions:
     effect: allow
   - action: shell
     resource: ".\\test-all.bat*"
+    effect: allow
+  - action: shell
+    resource: "powershell*Test-Harness.ps1*"
+    effect: allow
+  - action: shell
+    resource: "powershell*Package-Logic.ps1*"
+    effect: allow
+  - action: shell
+    resource: "powershell*Verify-Syntax.ps1*"
+    effect: allow
+  - action: shell
+    resource: "powershell*opencode\\*"
+    effect: allow
+  - action: shell
+    resource: "cmd /c C:\\IntunePackaging\\Apps\\*"
     effect: allow
   - action: shell
     resource: "java -version*"
@@ -625,6 +649,18 @@ permissions:
     resource: "dotnet restore*"
     effect: allow
   - action: shell
+    resource: "dotnet publish*"
+    effect: allow
+  - action: shell
+    resource: "dotnet new*"
+    effect: allow
+  - action: shell
+    resource: "dotnet sln*"
+    effect: allow
+  - action: shell
+    resource: "dotnet add*"
+    effect: allow
+  - action: shell
     resource: "node --version*"
     effect: allow
   - action: shell
@@ -735,67 +771,57 @@ permissions:
   - action: shell
     resource: "ava*"
     effect: allow
-
-  - action: opencode-agent-skills
-    resource: project-context-router
-    effect: deny
-  - action: opencode-agent-skills
-    resource: project-context-lite
+  - action: shell
+    resource: "bun --version*"
     effect: allow
-  - action: opencode-agent-skills
-    resource: repo-fork-manager
-    effect: deny
-  - action: opencode-agent-skills
-    resource: skill-creator
-    effect: deny
-  - action: opencode-agent-skills
-    resource: pandoc-read-epub
-    effect: deny
-  - action: opencode-agent-skills
-    resource: pandoc-read-latex
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "plannotator*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: opencode-local-plugins
-    effect: deny
-  - action: opencode-agent-skills
-    resource: gitnexus-refactoring
-    effect: deny
-  - action: opencode-agent-skills
-    resource: project-docs-architect
-    effect: deny
-  - action: opencode-agent-skills
-    resource: spring-boot-testing-kotlin
-    effect: deny
-  - action: opencode-agent-skills
-    resource: bash-permission-policy
-    effect: deny
-  - action: opencode-agent-skills
-    resource: opencode-custom-tools
-    effect: deny
-  - action: opencode-agent-skills
-    resource: find-docs
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "stitch*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "ponytail*"
-    effect: deny
-  - action: opencode-agent-skills
-    resource: "*"
+  - action: shell
+    resource: "bun -v*"
+    effect: allow
+  - action: shell
+    resource: "bun test*"
+    effect: allow
+  - action: shell
+    resource: "bun run *"
+    effect: allow
+  - action: shell
+    resource: "bun build*"
+    effect: allow
+  - action: shell
+    resource: "bun pm ls*"
+    effect: allow
+  - action: shell
+    resource: "bun info *"
+    effect: allow
+  - action: shell
+    resource: "tsx --version*"
+    effect: allow
+  - action: shell
+    resource: "tsx --help*"
     effect: allow
 
-  - action: read_skill_file
-    resource: "*"
+  - action: skill
+    resource: "opencode-v2-*"
     effect: allow
-  - action: run_skill_script
-    resource: "*"
+  - action: skill
+    resource: "testing-*"
     effect: allow
-
+  - action: skill
+    resource: "project-context*"
+    effect: allow
+  - action: skill
+    resource: "testing-*"
+    effect: allow
+  - action: skill
+    resource: "gitnexus-*"
+    effect: allow
+  - action: skill
+    resource: "gitnexus-init"
+    effect: deny
+  - action: skill
+    resource: "android-*"
+    effect: allow
 ---
+
 You are a **Production Code Review Specialist**. Your purpose is to perform DEEP analysis of code to ensure production-grade quality and catch bugs or breaking changes. You are relentless in finding issues. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
 # MANDATORY COMPLIANCE (Complete FIRST)
@@ -812,10 +838,10 @@ Skip these steps = incorrect execution.
 ## SKILL LOADING PROTOCOL
 
 Before answering:
-1. Run: use_skill({"skill": "auto-router"})
+1. Run: skill({"id": "auto-router"})
 2. Let auto-router analyze request and load relevant skills
 3. Follow loaded skill instructions
-4. For any project-task (implement, fix, refactor, plan, or explain project code): run use_skill({"skill": "project-context-lite"}) and follow its workflow to build context
+4. For any project-task (implement, fix, refactor, plan, or explain project code): run skill({"id": "project-context-lite"}) and follow its workflow to build context
 5. Load any other matching skills
 6. Then continue with your task
 
