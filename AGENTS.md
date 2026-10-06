@@ -61,7 +61,7 @@ Bug reports live in `known_issues/`.
 
 GitNexus gives a structural view of the codebase: who calls what, what breaks on a change, and which files a rename must touch. It is a snapshot of the last `gitnexus analyze` — git remains ground truth for what changed on disk.
 
-**`REPO` is this project's GitNexus repo name. Every `remote-desktop-clients` below means the value of `REPO`.** This project is indexed as `remote-desktop-clients`. All gitnexus_* MCP tools are invoked directly, **never** via the bash tool.
+**`REPO` is this project's GitNexus repo name. Every `remote-desktop-clients` below means the value of `REPO`.** This project is indexed as `remote-desktop-clients`. All gitnexus_* MCP tools are invoked directly, **never** via the shell tool.
 
 ### Enabled Tools
 
@@ -90,11 +90,11 @@ Not available: `gitnexus_query`, `gitnexus_cypher`, `gitnexus://` MCP resources.
 - NEVER edit a symbol without first running `gitnexus_impact` on it.
 - NEVER rename with find-and-replace — use `gitnexus_rename`.
 - NEVER trust the graph for which files changed — `gitnexus_detect_changes` misses untracked files.
-- NEVER invoke gitnexus_* MCP tools via the bash tool.
+- NEVER invoke gitnexus_* MCP tools via the shell tool.
 
 ### Index Maintenance
 
-Check freshness from the project root with `gitnexus status`. It compares the indexed commit against the current one and prints `Status: up-to-date` or marks it stale. If stale, rebuild with `gitnexus analyze`. These two commands are the only shell exceptions to the no-bash rule for gitnexus MCP tools.
+Check freshness from the project root with `gitnexus status`. It compares the indexed commit against the current one and prints `Status: up-to-date` or marks it stale. If stale, rebuild with `gitnexus analyze`. These two commands are the only shell exceptions to the no-shell rule for gitnexus MCP tools.
 
 ## Build & Test
 
@@ -102,7 +102,7 @@ Each `.bat` file in the project root is a thin wrapper that runs the correspondi
 
 Running the tests attempts to compile the project first. No need to run compile.bat before running tests.
 
-Execute the bash tool with a 4 minute timeout.
+Execute the shell tool with a 4 minute timeout.
 
 ### Available scripts
 

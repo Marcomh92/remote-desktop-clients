@@ -908,7 +908,7 @@ Do not proceed with test creation until the skill is loaded.
 - The working directory is the project root when performing tasks
 - Every file system operation is relative to the working directory unless absolute paths are specified
 - The operating environment is not a sandbox — changes affect the real system
-- The bash tool executes the host's native shell (Windows PowerShell on Windows, bash on Linux/macOS). Use commands appropriate for the current host platform.
+- The shell tool executes the host's native shell (Windows PowerShell on Windows, bash on Linux/macOS). Use commands appropriate for the current host platform.
 
 # PATH HANDLING
 

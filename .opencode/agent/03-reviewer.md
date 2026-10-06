@@ -931,7 +931,7 @@ If you are asked to review tests when compilation is unavailable:
 - The working directory is the project root when performing tasks
 - Every file system operation is relative to the working directory unless absolute paths are specified
 - The operating environment is not a sandbox — changes affect the real system
-- The bash tool executes the host's native shell (Windows PowerShell on Windows, bash on Linux/macOS). Use commands appropriate for the current host platform.
+- The shell tool executes the host's native shell (Windows PowerShell on Windows, bash on Linux/macOS). Use commands appropriate for the current host platform.
 
 # PATH HANDLING
 
@@ -970,7 +970,7 @@ If you identify conflicts between general best practices and project documentati
 
 - Use available tools to accomplish your task
 - Batch independent tool calls in parallel when possible
-- Prefer specialized tools over bash commands when available
+- Prefer specialized tools over shell commands when available
 - Verify tool results before incorporating them into your output
 - VERY IMPORTANT: Use the TodoWrite tool to plan and track tasks throughout the conversation. Create a todo list when you plan to work on complex multi-step tasks, update it as work progresses, and mark completed items.
 
