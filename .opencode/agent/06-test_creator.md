@@ -17,7 +17,7 @@ description: |
   OUT OF SCOPE: Production code changes
 
 mode: subagent
-model: minimax-coding-plan/MiniMax-M3.1-Flash-Preview#xhigh
+model: opencode-go/deepseek-v4.1-flash#high
 steps: 75
 request:
   body:

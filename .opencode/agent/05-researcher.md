@@ -20,7 +20,7 @@ description: |
   OUT OF SCOPE: Code modification, test execution, codebase exploration, implementation work.
 
 mode: subagent
-model: minimax-coding-plan/MiniMax-M3.1-Flash-Preview#medium
+model: opencode-go/deepseek-v4.1-flash#high
 steps: 45
 request:
   body:

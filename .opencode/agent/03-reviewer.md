@@ -22,7 +22,7 @@ description: |
   3. Any specific areas of concern
 
 mode: subagent
-model: minimax/MiniMax-M3#thinking
+model: opencode-go/deepseek-v4.1-flash#max
 steps: 70
 request:
   body:

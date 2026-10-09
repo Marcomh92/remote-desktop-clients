@@ -25,7 +25,7 @@ description: |
   Prefer focused tasks. Break tasks down and delegate to multiple implementers in parallel if possible
 
 mode: subagent
-model: minimax-coding-plan/MiniMax-M3.1-Flash-Preview#high
+model: opencode-go/deepseek-v4.1-flash#high
 steps: 80
 request:
   body:
