@@ -88,648 +88,6 @@ permissions:
     resource: "*"
     effect: deny
 
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "compile.bat*"
-    effect: allow
-  - action: shell
-    resource: "test-class.bat*"
-    effect: allow
-  - action: shell
-    resource: "test-package.bat*"
-    effect: allow
-  - action: shell
-    resource: "test-count.bat*"
-    effect: allow
-  - action: shell
-    resource: "test-all.bat*"
-    effect: allow
-  - action: shell
-    resource: ".\\compile.bat*"
-    effect: allow
-  - action: shell
-    resource: ".\\test-class.bat*"
-    effect: allow
-  - action: shell
-    resource: ".\\test-package.bat*"
-    effect: allow
-  - action: shell
-    resource: ".\\test-count.bat*"
-    effect: allow
-  - action: shell
-    resource: ".\\test-all.bat*"
-    effect: allow
-  - action: shell
-    resource: "java -version*"
-    effect: allow
-  - action: shell
-    resource: "*java.exe -version*"
-    effect: allow
-  - action: shell
-    resource: "& *java.exe -version*"
-    effect: allow
-  - action: shell
-    resource: "Resolve-Path*"
-    effect: allow
-  - action: shell
-    resource: "Split-Path*"
-    effect: allow
-  - action: shell
-    resource: "Join-Path*"
-    effect: allow
-  - action: shell
-    resource: "Convert-Path*"
-    effect: allow
-  - action: shell
-    resource: "Write-Host*"
-    effect: allow
-  - action: shell
-    resource: "Write-Verbose*"
-    effect: allow
-  - action: shell
-    resource: "Write-Debug*"
-    effect: allow
-  - action: shell
-    resource: "Write-Warning*"
-    effect: allow
-  - action: shell
-    resource: "Write-Information*"
-    effect: allow
-  - action: shell
-    resource: "Write-Progress*"
-    effect: allow
-  - action: shell
-    resource: "Start-Sleep *"
-    effect: allow
-  - action: shell
-    resource: "git status*"
-    effect: allow
-  - action: shell
-    resource: "git log*"
-    effect: allow
-  - action: shell
-    resource: "git diff*"
-    effect: allow
-  - action: shell
-    resource: "git -C * status*"
-    effect: allow
-  - action: shell
-    resource: "git -C * log*"
-    effect: allow
-  - action: shell
-    resource: "git -C * diff*"
-    effect: allow
-  - action: shell
-    resource: "pandoc -s *"
-    effect: allow
-  - action: shell
-    resource: "pandoc -s* -t plain*"
-    effect: allow
-  - action: shell
-    resource: "pandoc -s* -t gfm*"
-    effect: allow
-  - action: shell
-    resource: "pandoc --version"
-    effect: allow
-  - action: shell
-    resource: "python -c \"*PdfReader*extract_text()*"
-    effect: allow
-  - action: shell
-    resource: "python -c \"*pdfplumber*extract_text()*"
-    effect: allow
-  - action: shell
-    resource: "python -c \"*pdfplumber*extract_tables()*"
-    effect: allow
-  - action: shell
-    resource: "ls *"
-    effect: allow
-  - action: shell
-    resource: "Select-Object *"
-    effect: allow
-  - action: shell
-    resource: "Select-Object*"
-    effect: allow
-  - action: shell
-    resource: "Out-String*"
-    effect: allow
-  - action: shell
-    resource: "ForEach-Object *"
-    effect: allow
-  - action: shell
-    resource: "Select-String *"
-    effect: allow
-  - action: shell
-    resource: "Select-Xml *"
-    effect: allow
-  - action: shell
-    resource: "Get-ChildItem *"
-    effect: allow
-  - action: shell
-    resource: "Sort-Object *"
-    effect: allow
-  - action: shell
-    resource: "Where-Object*"
-    effect: allow
-  - action: shell
-    resource: "ConvertFrom-Json*"
-    effect: allow
-  - action: shell
-    resource: "Group-Object*"
-    effect: allow
-  - action: shell
-    resource: "Measure-Object*"
-    effect: allow
-  - action: shell
-    resource: "Format-Table*"
-    effect: allow
-  - action: shell
-    resource: "Format-List*"
-    effect: allow
-  - action: shell
-    resource: date
-    effect: allow
-  - action: shell
-    resource: "echo *"
-    effect: allow
-  - action: shell
-    resource: env
-    effect: allow
-  - action: shell
-    resource: set
-    effect: allow
-  - action: shell
-    resource: "Get-ChildItem Env:"
-    effect: allow
-  - action: shell
-    resource: ver
-    effect: allow
-  - action: shell
-    resource: "ls*"
-    effect: allow
-  - action: shell
-    resource: dir
-    effect: allow
-  - action: shell
-    resource: "Get-ChildItem*"
-    effect: allow
-  - action: shell
-    resource: "Get-ChildItem -Recurse*"
-    effect: allow
-  - action: shell
-    resource: "Get-Content*"
-    effect: allow
-  - action: shell
-    resource: "$* = Get-Content*"
-    effect: allow
-  - action: shell
-    resource: "$* = Get-*"
-    effect: allow
-  - action: shell
-    resource: "$* = Select-Object*"
-    effect: allow
-  - action: shell
-    resource: "$* = Select-String*"
-    effect: allow
-  - action: shell
-    resource: "$* = Where-Object*"
-    effect: allow
-  - action: shell
-    resource: "$* = ConvertFrom-Json*"
-    effect: allow
-  - action: shell
-    resource: "$* = ForEach-Object*"
-    effect: allow
-  - action: shell
-    resource: "$* = Sort-Object*"
-    effect: allow
-  - action: shell
-    resource: "$* = Join-Path*"
-    effect: allow
-  - action: shell
-    resource: "Test-Path*"
-    effect: allow
-  - action: shell
-    resource: "Test-Path *"
-    effect: allow
-  - action: shell
-    resource: "Out-Null *"
-    effect: allow
-  - action: shell
-    resource: "find *"
-    effect: allow
-  - action: shell
-    resource: "grep *"
-    effect: allow
-  - action: shell
-    resource: "rg *"
-    effect: allow
-  - action: shell
-    resource: "which *"
-    effect: allow
-  - action: shell
-    resource: "where *"
-    effect: allow
-  - action: shell
-    resource: "Get-Command*"
-    effect: allow
-  - action: shell
-    resource: "Get-Module*"
-    effect: allow
-  - action: shell
-    resource: "Get-InstalledModule*"
-    effect: allow
-  - action: shell
-    resource: "cat *"
-    effect: allow
-  - action: shell
-    resource: "less *"
-    effect: allow
-  - action: shell
-    resource: "more *"
-    effect: allow
-  - action: shell
-    resource: "head *"
-    effect: allow
-  - action: shell
-    resource: "tail *"
-    effect: allow
-  - action: shell
-    resource: "cut *"
-    effect: allow
-  - action: shell
-    resource: "sort *"
-    effect: allow
-  - action: shell
-    resource: "uniq *"
-    effect: allow
-  - action: shell
-    resource: "wc *"
-    effect: allow
-  - action: shell
-    resource: "diff *"
-    effect: allow
-  - action: shell
-    resource: "base64 *"
-    effect: allow
-  - action: shell
-    resource: "jq *"
-    effect: allow
-  - action: shell
-    resource: ps
-    effect: allow
-  - action: shell
-    resource: "ps *"
-    effect: allow
-  - action: shell
-    resource: Get-Process
-    effect: allow
-  - action: shell
-    resource: "Get-Process *"
-    effect: allow
-  - action: shell
-    resource: "Get-Service*"
-    effect: allow
-  - action: shell
-    resource: "Get-ComputerInfo*"
-    effect: allow
-  - action: shell
-    resource: "Get-WmiObject*"
-    effect: allow
-  - action: shell
-    resource: "Get-CimInstance*"
-    effect: allow
-  - action: shell
-    resource: "Get-Item*"
-    effect: allow
-  - action: shell
-    resource: "Get-ItemProperty*"
-    effect: allow
-  - action: shell
-    resource: "Get-Location*"
-    effect: allow
-  - action: shell
-    resource: "Push-Location*"
-    effect: allow
-  - action: shell
-    resource: Pop-Location
-    effect: allow
-  - action: shell
-    resource: "Get-Date*"
-    effect: allow
-  - action: shell
-    resource: "Get-FileHash*"
-    effect: allow
-  - action: shell
-    resource: "Get-Help*"
-    effect: allow
-  - action: shell
-    resource: "Get-Variable*"
-    effect: allow
-  - action: shell
-    resource: "Get-PSDrive*"
-    effect: allow
-  - action: shell
-    resource: "Get-Alias*"
-    effect: allow
-  - action: shell
-    resource: "Get-Culture*"
-    effect: allow
-  - action: shell
-    resource: "Get-Host*"
-    effect: allow
-  - action: shell
-    resource: "Get-TimeZone*"
-    effect: allow
-  - action: shell
-    resource: "Get-Unique*"
-    effect: allow
-  - action: shell
-    resource: "Get-Random*"
-    effect: allow
-  - action: shell
-    resource: "Compare-Object*"
-    effect: allow
-  - action: shell
-    resource: "Get-NetAdapter*"
-    effect: allow
-  - action: shell
-    resource: "Get-NetIPAddress*"
-    effect: allow
-  - action: shell
-    resource: "Get-NetTCPConnection*"
-    effect: allow
-  - action: shell
-    resource: "Get-NetRoute*"
-    effect: allow
-  - action: shell
-    resource: "Get-NetNeighbor*"
-    effect: allow
-  - action: shell
-    resource: "Get-NetIPInterface*"
-    effect: allow
-  - action: shell
-    resource: "Get-DnsClient*"
-    effect: allow
-  - action: shell
-    resource: "Get-WinEvent*"
-    effect: allow
-  - action: shell
-    resource: "Get-HotFix*"
-    effect: allow
-  - action: shell
-    resource: "Get-ExecutionPolicy*"
-    effect: allow
-  - action: shell
-    resource: "Get-Member*"
-    effect: allow
-  - action: shell
-    resource: "Get-FormatData*"
-    effect: allow
-  - action: shell
-    resource: "Get-PSSnapin*"
-    effect: allow
-  - action: shell
-    resource: "Get-PSSession*"
-    effect: allow
-  - action: shell
-    resource: "Get-History*"
-    effect: allow
-  - action: shell
-    resource: "arp -a*"
-    effect: allow
-  - action: shell
-    resource: "route print*"
-    effect: allow
-  - action: shell
-    resource: "dotnet --list-runtimes*"
-    effect: allow
-  - action: shell
-    resource: "tasklist*"
-    effect: allow
-  - action: shell
-    resource: ipconfig
-    effect: allow
-  - action: shell
-    resource: "nslookup*"
-    effect: allow
-  - action: shell
-    resource: "ping*"
-    effect: allow
-  - action: shell
-    resource: "tracert*"
-    effect: allow
-  - action: shell
-    resource: "netstat*"
-    effect: allow
-  - action: shell
-    resource: "Test-Connection*"
-    effect: allow
-  - action: shell
-    resource: "Test-NetConnection*"
-    effect: allow
-  - action: shell
-    resource: "Resolve-DnsName*"
-    effect: allow
-  - action: shell
-    resource: "systeminfo*"
-    effect: allow
-  - action: shell
-    resource: "npm test*"
-    effect: allow
-  - action: shell
-    resource: "npm run *"
-    effect: allow
-  - action: shell
-    resource: "npm audit"
-    effect: allow
-  - action: shell
-    resource: "npm list*"
-    effect: allow
-  - action: shell
-    resource: "npm outdated"
-    effect: allow
-  - action: shell
-    resource: "npm config*"
-    effect: allow
-  - action: shell
-    resource: "npm view *"
-    effect: allow
-  - action: shell
-    resource: "npm info *"
-    effect: allow
-  - action: shell
-    resource: "yarn test*"
-    effect: allow
-  - action: shell
-    resource: "yarn run *"
-    effect: allow
-  - action: shell
-    resource: "yarn build*"
-    effect: allow
-  - action: shell
-    resource: "yarn lint*"
-    effect: allow
-  - action: shell
-    resource: "yarn info *"
-    effect: allow
-  - action: shell
-    resource: "yarn config*"
-    effect: allow
-  - action: shell
-    resource: "pnpm test*"
-    effect: allow
-  - action: shell
-    resource: "pnpm run *"
-    effect: allow
-  - action: shell
-    resource: "pnpm build*"
-    effect: allow
-  - action: shell
-    resource: "pnpm lint*"
-    effect: allow
-  - action: shell
-    resource: "pnpm config*"
-    effect: allow
-  - action: shell
-    resource: "pnpm view *"
-    effect: allow
-  - action: shell
-    resource: "pnpm outdated"
-    effect: allow
-  - action: shell
-    resource: "dotnet build*"
-    effect: allow
-  - action: shell
-    resource: "dotnet test*"
-    effect: allow
-  - action: shell
-    resource: "dotnet --version"
-    effect: allow
-  - action: shell
-    resource: "dotnet --list-sdks"
-    effect: allow
-  - action: shell
-    resource: "dotnet --info"
-    effect: allow
-  - action: shell
-    resource: "dotnet format*"
-    effect: allow
-  - action: shell
-    resource: "dotnet restore*"
-    effect: allow
-  - action: shell
-    resource: "node --version*"
-    effect: allow
-  - action: shell
-    resource: "node -v*"
-    effect: allow
-  - action: shell
-    resource: "npm --version*"
-    effect: allow
-  - action: shell
-    resource: "python --version*"
-    effect: allow
-  - action: shell
-    resource: "pip --version*"
-    effect: allow
-  - action: shell
-    resource: "pip list*"
-    effect: allow
-  - action: shell
-    resource: "pip show*"
-    effect: allow
-  - action: shell
-    resource: "go version*"
-    effect: allow
-  - action: shell
-    resource: "rustc --version*"
-    effect: allow
-  - action: shell
-    resource: "cargo --version*"
-    effect: allow
-  - action: shell
-    resource: "python -m pytest*"
-    effect: allow
-  - action: shell
-    resource: "pytest*"
-    effect: allow
-  - action: shell
-    resource: "python -m unittest*"
-    effect: allow
-  - action: shell
-    resource: "cargo test*"
-    effect: allow
-  - action: shell
-    resource: "cargo build*"
-    effect: allow
-  - action: shell
-    resource: "cargo check*"
-    effect: allow
-  - action: shell
-    resource: "cargo clippy*"
-    effect: allow
-  - action: shell
-    resource: "cargo fmt*"
-    effect: allow
-  - action: shell
-    resource: "go test*"
-    effect: allow
-  - action: shell
-    resource: "go build*"
-    effect: allow
-  - action: shell
-    resource: "go fmt*"
-    effect: allow
-  - action: shell
-    resource: "go vet*"
-    effect: allow
-  - action: shell
-    resource: "tsc*"
-    effect: allow
-  - action: shell
-    resource: "tsc --noEmit"
-    effect: allow
-  - action: shell
-    resource: "vite*"
-    effect: allow
-  - action: shell
-    resource: "webpack*"
-    effect: allow
-  - action: shell
-    resource: "eslint*"
-    effect: allow
-  - action: shell
-    resource: "prettier*"
-    effect: allow
-  - action: shell
-    resource: "stylelint*"
-    effect: allow
-  - action: shell
-    resource: "biome *"
-    effect: allow
-  - action: shell
-    resource: "jest*"
-    effect: allow
-  - action: shell
-    resource: "vitest*"
-    effect: allow
-  - action: shell
-    resource: "playwright test*"
-    effect: allow
-  - action: shell
-    resource: "cypress run*"
-    effect: allow
-  - action: shell
-    resource: "mocha*"
-    effect: allow
-  - action: shell
-    resource: "karma test*"
-    effect: allow
-  - action: shell
-    resource: "ava*"
-    effect: allow
     
   - action: skill
     resource: "find-docs"
@@ -749,6 +107,191 @@ permissions:
   - action: skill
     resource: "android-feature-generator"
     effect: deny
+
+  - action: shell
+    resource: "Remove-Item *"
+    effect: deny
+  - action: shell
+    resource: "Remove-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "Clear-Content *"
+    effect: deny
+  - action: shell
+    resource: "Clear-Item *"
+    effect: deny
+  - action: shell
+    resource: "Clear-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "Clear-RecycleBin *"
+    effect: deny
+  - action: shell
+    resource: "del *"
+    effect: deny
+  - action: shell
+    resource: "erase *"
+    effect: deny
+  - action: shell
+    resource: "rmdir *"
+    effect: deny
+  - action: shell
+    resource: "rd *"
+    effect: deny
+
+  - action: shell
+    resource: "rm *"
+    effect: deny
+  - action: shell
+    resource: "rmdir *"
+    effect: deny
+  - action: shell
+    resource: "unlink *"
+    effect: deny
+  - action: shell
+    resource: "shred *"
+    effect: deny
+
+  - action: shell
+    resource: "Set-Content *"
+    effect: deny
+  - action: shell
+    resource: "Add-Content *"
+    effect: deny
+  - action: shell
+    resource: "Out-File *"
+    effect: deny
+  - action: shell
+    resource: "New-Item *"
+    effect: deny
+  - action: shell
+    resource: "Set-Item *"
+    effect: deny
+  - action: shell
+    resource: "Set-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "New-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "Tee-Object *"
+    effect: deny
+  - action: shell
+    resource: "Set-Acl *"
+    effect: deny
+
+  - action: shell
+    resource: "touch *"
+    effect: deny
+  - action: shell
+    resource: "mkdir *"
+    effect: deny
+  - action: shell
+    resource: "truncate *"
+    effect: deny
+  - action: shell
+    resource: "tee *"
+    effect: deny
+  - action: shell
+    resource: "mknod *"
+    effect: deny
+  - action: shell
+    resource: "mkfifo *"
+    effect: deny
+  - action: shell
+    resource: "ln *"
+    effect: deny
+  - action: shell
+    resource: "dd *"
+    effect: deny
+  - action: shell
+    resource: "sed -i *"
+    effect: deny
+
+  - action: shell
+    resource: "Move-Item *"
+    effect: deny
+  - action: shell
+    resource: "Copy-Item *"
+    effect: deny
+  - action: shell
+    resource: "Rename-Item *"
+    effect: deny
+  - action: shell
+    resource: "move *"
+    effect: deny
+  - action: shell
+    resource: "copy *"
+    effect: deny
+  - action: shell
+    resource: "ren *"
+    effect: deny
+  - action: shell
+    resource: "xcopy *"
+    effect: deny
+  - action: shell
+    resource: "xcopy.exe *"
+    effect: deny
+  - action: shell
+    resource: "robocopy *"
+    effect: deny
+  - action: shell
+    resource: "robocopy.exe *"
+    effect: deny
+
+  - action: shell
+    resource: "mv *"
+    effect: deny
+  - action: shell
+    resource: "cp *"
+    effect: deny
+  - action: shell
+    resource: "install *"
+    effect: deny
+  - action: shell
+    resource: "patch *"
+    effect: deny
+
+  - action: shell
+    resource: "icacls *"
+    effect: deny
+  - action: shell
+    resource: "takeown *"
+    effect: deny
+
+  - action: shell
+    resource: "chmod *"
+    effect: deny
+  - action: shell
+    resource: "chown *"
+    effect: deny
+  - action: shell
+    resource: "chgrp *"
+    effect: deny
+
+  - action: shell
+    resource: "notepad *"
+    effect: deny
+  - action: shell
+    resource: "notepad.exe *"
+    effect: deny
+
+  - action: shell
+    resource: "vim *"
+    effect: deny
+  - action: shell
+    resource: "vi *"
+    effect: deny
+  - action: shell
+    resource: "nano *"
+    effect: deny
+  - action: shell
+    resource: "emacs *"
+    effect: deny
+  - action: shell
+    resource: "ed *"
+    effect: deny
+
 ---
 You are a **Code Investigation Specialist**. Your purpose is to EXPLORE and UNDERSTAND the codebase, then explain it clearly to the primary agent. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 

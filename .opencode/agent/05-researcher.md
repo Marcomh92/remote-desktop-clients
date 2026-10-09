@@ -26,9 +26,6 @@ request:
   body:
     temperature: 0.7
 permissions:
-  - action: shell
-    resource: "*"
-    effect: deny
 
   - action: read
     resource: "*"
@@ -88,6 +85,191 @@ permissions:
   - action: skill
     resource: "find-docs"
     effect: allow
+
+  - action: shell
+    resource: "Remove-Item *"
+    effect: deny
+  - action: shell
+    resource: "Remove-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "Clear-Content *"
+    effect: deny
+  - action: shell
+    resource: "Clear-Item *"
+    effect: deny
+  - action: shell
+    resource: "Clear-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "Clear-RecycleBin *"
+    effect: deny
+  - action: shell
+    resource: "del *"
+    effect: deny
+  - action: shell
+    resource: "erase *"
+    effect: deny
+  - action: shell
+    resource: "rmdir *"
+    effect: deny
+  - action: shell
+    resource: "rd *"
+    effect: deny
+
+  - action: shell
+    resource: "rm *"
+    effect: deny
+  - action: shell
+    resource: "rmdir *"
+    effect: deny
+  - action: shell
+    resource: "unlink *"
+    effect: deny
+  - action: shell
+    resource: "shred *"
+    effect: deny
+
+  - action: shell
+    resource: "Set-Content *"
+    effect: deny
+  - action: shell
+    resource: "Add-Content *"
+    effect: deny
+  - action: shell
+    resource: "Out-File *"
+    effect: deny
+  - action: shell
+    resource: "New-Item *"
+    effect: deny
+  - action: shell
+    resource: "Set-Item *"
+    effect: deny
+  - action: shell
+    resource: "Set-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "New-ItemProperty *"
+    effect: deny
+  - action: shell
+    resource: "Tee-Object *"
+    effect: deny
+  - action: shell
+    resource: "Set-Acl *"
+    effect: deny
+
+  - action: shell
+    resource: "touch *"
+    effect: deny
+  - action: shell
+    resource: "mkdir *"
+    effect: deny
+  - action: shell
+    resource: "truncate *"
+    effect: deny
+  - action: shell
+    resource: "tee *"
+    effect: deny
+  - action: shell
+    resource: "mknod *"
+    effect: deny
+  - action: shell
+    resource: "mkfifo *"
+    effect: deny
+  - action: shell
+    resource: "ln *"
+    effect: deny
+  - action: shell
+    resource: "dd *"
+    effect: deny
+  - action: shell
+    resource: "sed -i *"
+    effect: deny
+
+  - action: shell
+    resource: "Move-Item *"
+    effect: deny
+  - action: shell
+    resource: "Copy-Item *"
+    effect: deny
+  - action: shell
+    resource: "Rename-Item *"
+    effect: deny
+  - action: shell
+    resource: "move *"
+    effect: deny
+  - action: shell
+    resource: "copy *"
+    effect: deny
+  - action: shell
+    resource: "ren *"
+    effect: deny
+  - action: shell
+    resource: "xcopy *"
+    effect: deny
+  - action: shell
+    resource: "xcopy.exe *"
+    effect: deny
+  - action: shell
+    resource: "robocopy *"
+    effect: deny
+  - action: shell
+    resource: "robocopy.exe *"
+    effect: deny
+
+  - action: shell
+    resource: "mv *"
+    effect: deny
+  - action: shell
+    resource: "cp *"
+    effect: deny
+  - action: shell
+    resource: "install *"
+    effect: deny
+  - action: shell
+    resource: "patch *"
+    effect: deny
+
+  - action: shell
+    resource: "icacls *"
+    effect: deny
+  - action: shell
+    resource: "takeown *"
+    effect: deny
+
+  - action: shell
+    resource: "chmod *"
+    effect: deny
+  - action: shell
+    resource: "chown *"
+    effect: deny
+  - action: shell
+    resource: "chgrp *"
+    effect: deny
+
+  - action: shell
+    resource: "notepad *"
+    effect: deny
+  - action: shell
+    resource: "notepad.exe *"
+    effect: deny
+
+  - action: shell
+    resource: "vim *"
+    effect: deny
+  - action: shell
+    resource: "vi *"
+    effect: deny
+  - action: shell
+    resource: "nano *"
+    effect: deny
+  - action: shell
+    resource: "emacs *"
+    effect: deny
+  - action: shell
+    resource: "ed *"
+    effect: deny
+
 ---
 You are a **Library/API Research Specialist**. Your purpose is to research libraries, APIs, frameworks, and technical solutions, then provide synthesized findings with sources to the primary agent. You do not have access to the full conversation history — you start fresh with only the context provided in your delegation prompt.
 
