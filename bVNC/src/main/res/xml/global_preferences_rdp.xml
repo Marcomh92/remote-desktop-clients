@@ -35,4 +35,9 @@
         android:key="rdpPointerAccelReset"
         android:title="@string/rdp_pointer_accel_reset"
         android:summary="@string/rdp_pointer_accel_reset_summary" />
+    <SwitchPreferenceCompat
+        android:defaultValue="false"
+        android:key="rdpInputDiagnostics"
+        android:title="@string/rdp_input_diagnostics"
+        android:summary="@string/rdp_input_diagnostics_summary" />
 </PreferenceScreen>

@@ -369,6 +369,33 @@ Constants for the round-9 sliders live at `Constants.java:182-185` (keys) and `:
 
 ---
 
+## PAT-018 — Opt-in diagnostics logger with a single stable tag
+
+**Rule.** A cross-cutting diagnostic facility follows a fixed shape so one filtered `logcat` capture is self-explanatory and the cost is zero in the default configuration:
+
+1. **One stable tag.** All lines share a single hardcoded tag (here `RDPInput`) so a capture is `adb logcat -s RDPInput`. Never log the same facility under several per-class tags.
+2. **One process-wide gate.** A single `public static volatile boolean enabled`, written only at app start and from a Settings change listener. Every public method early-returns on it as its FIRST statement and builds no message string when disabled — this keeps an always-present call site free.
+3. **A monotonic sequence prefix.** Logcat gives no ordering guarantee across threads, so each line is prefixed with an `AtomicLong` sequence number; combine it with a monotonic clock timestamp to make cross-thread interleaving readable.
+4. **Stage-prefixed lines.** Each line states the pipeline stage (`enter`, `drop`, `wire`, `WARN`) plus the fields needed to reconstruct the event; a `wire` line records the measured enqueue→execution latency so backlog is visible.
+5. **State confined to the owned thread.** Any DOWN/UP pairing bookkeeping is touched only from the single thread that owns the wire sends (here `RdpCommunicator`'s `inputExecutor`), never synchronized across threads.
+
+**Why.** All-or-nothing verbose logging forces an app restart to toggle and cannot express down/up pairing; a single-tag, single-gate facility is togglable live and its pairing warnings (`orphan UP`, close-time leak dump) are what turn an intermittent fault into a readable capture.
+
+**Where (aRDP fork).**
+- `remoteClientLib/src/main/java/com/undatech/opaque/util/RdpInputLog.java` — tag, `enabled`, `SEQ`, stage methods, `warnOrphanUp`, `dumpLeaks`.
+- `remoteClientLib/src/main/java/com/undatech/opaque/input/InputDownTracker.java` — the thread-confined held-id tracker.
+- Consumers: `RdpCommunicator.java` (wire stage + trackers + `scheduleInputLeakCheck`), `RemoteRdpKeyboard.processLocalKeyEvent` / `RemoteRdpPointer.sendPointerEvent` (entry/drop stage).
+- Toggle plumbing: `Constants.rdpInputDiagnostics`, `App.java:51-52`, `GlobalPreferencesFragment.java:38-46`, `global_preferences_rdp.xml:38-42`.
+
+**Invariant.** See INV-033 (thread confinement, credential safety — IME text is logged as a count only, opt-in cost) and PER-007. Full behavior map: `features/INPUT_PIPELINE.md` §12.
+
+**Anti-patterns.**
+- Passing the same facility a string to log without gating it internally — the caller then builds the string on every event.
+- Checking `enabled` at the call site instead of inside the logger.
+- Logging the actual IME-committed characters (they can contain passwords/OTPs).
+
+---
+
 ## Pointer convention
 
 `docs/*.md` files use **repo-relative paths** (no leading `/`), backticks for filenames (`bVNC/src/main/java/com/...`). When pointing to a method, include the line range as `:startLine-endLine` to make agent-driven lookups trivial. Example: `RemoteRdpPointer.sendPointerEvent:107-134`.

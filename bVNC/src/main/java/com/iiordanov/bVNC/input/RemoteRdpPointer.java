@@ -7,6 +7,7 @@ import com.undatech.opaque.InputCarriable;
 import com.undatech.opaque.RfbConnectable;
 import com.undatech.opaque.Viewable;
 import com.undatech.opaque.util.GeneralUtils;
+import com.undatech.opaque.util.RdpInputLog;
 
 public class RemoteRdpPointer extends RemotePointer {
     private static final String TAG = "RemoteRdpPointer";
@@ -110,6 +111,7 @@ public class RemoteRdpPointer extends RemotePointer {
     private void sendPointerEvent(int x, int y, int metaState, boolean isMoving) {
 
         int combinedMetaState = metaState | remoteInput.getKeyboard().getMetaState();
+        RdpInputLog.pointerEntry(x, y, pointerMask, prevPointerMask, combinedMetaState, isMoving);
 
         // Save the previous pointer mask other than action_move, so we can
         // send it with the pointer flag "not down" to clear the action.

@@ -1022,6 +1022,8 @@ Below that is where you configure your connection.
     <string name="rdp_pointer_accel_reset_toast">Pointer acceleration reset to defaults</string>
     <string name="rdp_precise_finger_tracking">Precise finger tracking</string>
     <string name="rdp_precise_finger_tracking_summary">Cursor follows the finger exactly, ignoring touchpad sensitivity and pointer acceleration</string>
+    <string name="rdp_input_diagnostics">Input diagnostics (verbose)</string>
+    <string name="rdp_input_diagnostics_summary">Log every RDP keyboard and mouse event under tag RDPInput to diagnose input lag or stuck keys (adb logcat -s RDPInput)</string>
     <string name="desktop_scale_percentage">Custom Scaling Percentage</string>
     <string name="show_menu">Show Menu</string>
     <string name="move_toolbar">Move Toolbar</string>

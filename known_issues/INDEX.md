@@ -4,7 +4,9 @@ This directory contains bug reports for known issues in this codebase.
 
 ## Active Issues
 
-_None at the moment._
+| ID | Title | Severity | Status | Reported |
+|----|-------|----------|--------|----------|
+| [BUG-005](BUG-005-unmatched-unicode-down.md) | RDP-only, latent: with `preferSendingUnicode=false`, a `vkcode==0 && unicodeChar!=0` key sends a unicode DOWN with no matching UP → host-side stuck key. Found while adding the `RDPInput` diagnostics. | Low — latent, non-default config | OPEN | 2026-10-11 |
 
 
 ## Closed Issues

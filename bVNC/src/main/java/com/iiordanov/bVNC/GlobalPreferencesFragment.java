@@ -9,6 +9,7 @@ import androidx.preference.SeekBarPreference;
 import androidx.preference.SwitchPreferenceCompat;
 
 import com.undatech.remoteClientUi.R;
+import com.undatech.opaque.util.RdpInputLog;
 
 public class GlobalPreferencesFragment extends PreferenceFragmentCompat {
     @Override
@@ -33,6 +34,15 @@ public class GlobalPreferencesFragment extends PreferenceFragmentCompat {
                 });
                 applyPreciseTrackingGreying(Utils.querySharedPreferenceBoolean(
                         requireContext(), Constants.rdpPreciseFingerTracking, Constants.DEFAULT_RDP_PRECISE_FINGER_TRACKING));
+            }
+            SwitchPreferenceCompat inputDiagnostics = findPreference(Constants.rdpInputDiagnostics);
+            if (inputDiagnostics != null) {
+                inputDiagnostics.setOnPreferenceChangeListener((preference, newValue) -> {
+                    RdpInputLog.enabled = (Boolean) newValue;
+                    return true;
+                });
+                RdpInputLog.enabled = Utils.querySharedPreferenceBoolean(
+                        requireContext(), Constants.rdpInputDiagnostics, Constants.DEFAULT_RDP_INPUT_DIAGNOSTICS);
             }
         } else if (Utils.isSpice(getContext())) {
             addPreferencesFromResource(R.xml.global_preferences_spice);

@@ -12,6 +12,7 @@ import com.undatech.opaque.RdpCommunicator;
 import com.undatech.opaque.Viewable;
 import com.undatech.opaque.input.RdpKeyboardMapper;
 import com.undatech.opaque.input.RemotePointer;
+import com.undatech.opaque.util.RdpInputLog;
 
 public class RemoteRdpKeyboard extends RemoteKeyboard {
     private final static String TAG = "RemoteRdpKeyboard";
@@ -52,9 +53,13 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
 
     public boolean processLocalKeyEvent(int keyCode, KeyEvent evt, int additionalMetaState) {
         debugLog(App.debugLog, TAG, "processLocalKeyEvent: " + evt.toString() + " " + keyCode);
+        RdpInputLog.keyEntry(keyCode, evt.getAction(), additionalMetaState, onScreenMetaState,
+                evt.getRepeatCount(), evt.getEventTime());
         // Drop repeated modifiers
-        if (shouldDropModifierKeys(evt))
+        if (shouldDropModifierKeys(evt)) {
+            RdpInputLog.keyDrop("repeated-modifier", keyCode, evt.getAction());
             return true;
+        }
         boolean isRepeat = evt.getRepeatCount() > 0;
         rdpcomm.remoteKeyboardState.detectHardwareMetaState(evt);
 
@@ -64,11 +69,15 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
                     (evt.getAction() == KeyEvent.ACTION_MULTIPLE);
             int metaState = additionalMetaState | convertEventMetaState(evt);
 
-            if (keyCode == KeyEvent.KEYCODE_MENU)
+            if (keyCode == KeyEvent.KEYCODE_MENU) {
+                RdpInputLog.keyDrop("menu-key", keyCode, evt.getAction());
                 return true;                           // Ignore menu key
+            }
 
-            if (pointer.hardwareButtonsAsMouseEvents(keyCode, evt, metaState | onScreenMetaState))
+            if (pointer.hardwareButtonsAsMouseEvents(keyCode, evt, metaState | onScreenMetaState)) {
+                RdpInputLog.keyDrop("mouse-button-key", keyCode, evt.getAction());
                 return true;
+            }
 
             // Detect whether this event is coming from a default hardware keyboard.
             metaState = onScreenMetaState | metaState;
@@ -96,6 +105,7 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
 
                 if (s != null) {
                     int numchars = s.length();
+                    RdpInputLog.keyChars(numchars);
                     for (int i = 0; i < numchars; i++) {
                         KeyEvent event = new KeyEvent(evt.getEventTime(), s.substring(i, i + 1), KeyCharacterMap.FULL, 0);
                         keyboardMapper.processAndroidKeyEvent(event, isRepeat);
@@ -110,6 +120,7 @@ public class RemoteRdpKeyboard extends RemoteKeyboard {
                 return handled;
             }
         } else {
+            RdpInputLog.keyDrop("not-in-normal-protocol", keyCode, evt.getAction());
             return false;
         }
     }

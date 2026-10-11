@@ -474,6 +474,11 @@ public class RdpKeyboardMapper {
             case KeyEvent.ACTION_UP: {
                 if ((vkcode & KEY_FLAG_UNICODE) != 0 && !isRepeat) {
                     listener.processUnicodeKey(vkcode & (~KEY_FLAG_UNICODE), false, suppressMetaState);
+                } else if ((vkcode & KEY_FLAG_SHIFT) != 0) {
+                    // The ACTION_DOWN branch for a KEY_FLAG_SHIFT key already sent the complete
+                    // VK_LSHIFT down / VK down / VK up / VK_LSHIFT up sequence, so the key is
+                    // already released. Sending the flagged vkcode here would be a bogus,
+                    // unmatched UP.
                 } else if (vkcode > 0 && !isRepeat) {
                     listener.processVirtualKey(vkcode, false);
                 }

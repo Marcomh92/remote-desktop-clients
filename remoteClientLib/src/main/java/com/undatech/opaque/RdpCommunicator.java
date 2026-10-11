@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.os.SystemClock;
 import android.util.Log;
 
 import com.freerdp.freerdpcore.application.GlobalApp;
@@ -12,10 +13,12 @@ import com.freerdp.freerdpcore.application.SessionState;
 import com.freerdp.freerdpcore.domain.BookmarkBase;
 import com.freerdp.freerdpcore.domain.ManualBookmark;
 import com.freerdp.freerdpcore.services.LibFreeRDP;
+import com.undatech.opaque.input.InputDownTracker;
 import com.undatech.opaque.input.RdpKeyboardMapper;
 import com.undatech.opaque.input.RemoteKeyboard;
 import com.undatech.opaque.input.RemotePointer;
 import com.undatech.opaque.util.GeneralUtils;
+import com.undatech.opaque.util.RdpInputLog;
 
 import org.apache.commons.validator.routines.InetAddressValidator;
 
@@ -69,6 +72,17 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
                 return thread;
             }
     );
+
+    /**
+     * Diagnostics state for {@link RdpInputLog}. Only ever touched from
+     * {@code SendRdpInputThread} (the single input executor) — the trackers are not
+     * thread-safe, and every update happens inside a submitted send task.
+     */
+    private final InputDownTracker keyDownTracker = new InputDownTracker();
+    private final InputDownTracker unicodeDownTracker = new InputDownTracker();
+    private int lastMouseHeldMask = 0;
+    /** LEFT | RIGHT | MIDDLE button bits (canonical values live in RemoteRdpPointer). */
+    private static final int MOUSE_HELD_BUTTON_MASK = 0x1000 | 0x2000 | 0x4000;
 
     public RdpCommunicator(Connection connection,
                            Context context, Handler handler, Viewable viewable,
@@ -169,10 +183,15 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
     }
 
     private void sendRemoteMouseEventOnNewThread(int x, int y, int pointerMask) {
-        runMethodOnInputThread(() -> sendRemoteMouseEvent(x, y, pointerMask));
+        final long queuedAtMs = RdpInputLog.enabled ? SystemClock.uptimeMillis() : 0L;
+        runMethodOnInputThread(() -> sendRemoteMouseEvent(x, y, pointerMask, queuedAtMs));
     }
 
-    private synchronized void sendRemoteMouseEvent(int x, int y, int pointerMask) {
+    private synchronized void sendRemoteMouseEvent(int x, int y, int pointerMask, long queuedAtMs) {
+        if (RdpInputLog.enabled) {
+            RdpInputLog.wireMouse(x, y, pointerMask, SystemClock.uptimeMillis() - queuedAtMs);
+            lastMouseHeldMask = pointerMask & MOUSE_HELD_BUTTON_MASK;
+        }
         sleepBetweenInputEvents(3);
         LibFreeRDP.sendCursorEvent(session.getInstance(), x, y, pointerMask);
     }
@@ -206,9 +225,27 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
     public void close() {
         setIsInNormalProtocol(false);
         disconnectRequested = true;
+        scheduleInputLeakCheck();
         long instance = session.getInstance();
         DisconnectThread d = new DisconnectThread(instance);
         d.start();
+    }
+
+    /**
+     * Diagnostics: submit one task on the input thread that reports any VK / unicode key /
+     * mouse button still held on the wire after every queued event has drained. A non-empty
+     * report at disconnect is the "DOWN sent without its matching UP" (stuck key) signal.
+     */
+    private void scheduleInputLeakCheck() {
+        if (!RdpInputLog.enabled) return;
+        runMethodOnInputThread(() -> {
+            RdpInputLog.dumpLeaks(keyDownTracker, unicodeDownTracker);
+            if (lastMouseHeldMask != 0) {
+                RdpInputLog.warn("LEAK at disconnect: mouse button(s) still held mask="
+                        + Integer.toHexString(lastMouseHeldMask));
+            }
+            lastMouseHeldMask = 0;
+        });
     }
 
     @Override
@@ -276,10 +313,19 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
     }
 
     private void sendKeyEventOnNewThread(int virtualKeyCode, boolean down) {
-        runMethodOnInputThread(() -> sendKeyEvent(virtualKeyCode, down));
+        final long queuedAtMs = RdpInputLog.enabled ? SystemClock.uptimeMillis() : 0L;
+        runMethodOnInputThread(() -> sendKeyEvent(virtualKeyCode, down, queuedAtMs));
     }
 
-    private synchronized void sendKeyEvent(int virtualKeyCode, boolean down) {
+    private synchronized void sendKeyEvent(int virtualKeyCode, boolean down, long queuedAtMs) {
+        if (RdpInputLog.enabled) {
+            RdpInputLog.wireKey(virtualKeyCode, down, SystemClock.uptimeMillis() - queuedAtMs);
+            if (down) {
+                keyDownTracker.markDown(virtualKeyCode);
+            } else if (keyDownTracker.markUp(virtualKeyCode)) {
+                RdpInputLog.warnOrphanUp("vk", virtualKeyCode);
+            }
+        }
         sleepBetweenInputEvents(5);
         LibFreeRDP.sendKeyEvent(session.getInstance(), virtualKeyCode, down);
     }
@@ -299,14 +345,23 @@ public class RdpCommunicator extends RfbConnectable implements RdpKeyboardMapper
     }
 
     private void sendUnicodeKeyOnNewThread(int unicodeKey, boolean down) {
-        runMethodOnInputThread(() -> sendUnicodeKey(unicodeKey, down));
+        final long queuedAtMs = RdpInputLog.enabled ? SystemClock.uptimeMillis() : 0L;
+        runMethodOnInputThread(() -> sendUnicodeKey(unicodeKey, down, queuedAtMs));
     }
 
     private void runMethodOnInputThread(Runnable runnable) {
         inputExecutor.submit(runnable);
     }
 
-    private synchronized void sendUnicodeKey(int unicodeKey, boolean down) {
+    private synchronized void sendUnicodeKey(int unicodeKey, boolean down, long queuedAtMs) {
+        if (RdpInputLog.enabled) {
+            RdpInputLog.wireUnicode(unicodeKey, down, SystemClock.uptimeMillis() - queuedAtMs);
+            if (down) {
+                unicodeDownTracker.markDown(unicodeKey);
+            } else if (unicodeDownTracker.markUp(unicodeKey)) {
+                RdpInputLog.warnOrphanUp("unicode", unicodeKey);
+            }
+        }
         sleepBetweenInputEvents(5);
         LibFreeRDP.sendUnicodeKeyEvent(session.getInstance(), unicodeKey, down);
     }

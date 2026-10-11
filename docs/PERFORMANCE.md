@@ -32,6 +32,8 @@ These are not formally enforced; they are descriptive of current behavior and wh
 
 Touch and key handlers use the same executor (see `DESIGN_PRINCIPLES.md` PAT-003), so the throttle is per channel, not per type.
 
+**Diagnostics overhead.** The opt-in RDP input diagnostics (`RdpInputLog`, setting `rdpInputDiagnostics`, default off) add exactly one volatile read per event and build no string when disabled. When enabled the logging is verbose and can itself perturb input timing (observer effect) — never enable it for throughput-sensitive measurements. See PER-007 / INV-033 and `features/INPUT_PIPELINE.md` §12.
+
 ---
 
 ## 3. Memory and GC

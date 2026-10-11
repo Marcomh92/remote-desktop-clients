@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.lang.ref.WeakReference;
 
 import com.iiordanov.util.CustomClientConfigFileReader;
+import com.undatech.opaque.util.RdpInputLog;
 
 public class App extends MultiDexApplication {
     private final static String TAG = "App";
@@ -47,6 +48,8 @@ public class App extends MultiDexApplication {
             }
         }
         debugLog = Utils.querySharedPreferenceBoolean(getApplicationContext(), "moreDebugLoggingTag");
+        RdpInputLog.enabled = Utils.querySharedPreferenceBoolean(
+                getApplicationContext(), Constants.rdpInputDiagnostics, Constants.DEFAULT_RDP_INPUT_DIAGNOSTICS);
     }
 
     public Database getDatabase() {

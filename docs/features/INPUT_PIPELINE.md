@@ -288,6 +288,8 @@ processLocalKeyEvent(int keyCode, KeyEvent evt, int additionalMetaState)
 
 Numeric constants for the extended-table lookups live in `remoteClientLib:...:freeRDPCore/res/values/integers.xml`; consumed at `RdpKeyboardMapper.java:373-441`.
 
+**`KEY_FLAG_SHIFT` ACTION_UP fix (behaviour change).** In `RdpKeyboardMapper.processAndroidKeyEvent` the ACTION_UP branch now skips the UP send for a key whose vkcode carries `KEY_FLAG_SHIFT` (`RdpKeyboardMapper.java:477-481`). The ACTION_DOWN branch for such a key already emits the complete `VK_LSHIFT down / VK down / VK up / VK_LSHIFT up` sequence (`:498-504`), so the key is already released on the wire; the former ACTION_UP emitted a bogus, unmatched UP carrying the flag value (never a valid VK). The fix removed both a spurious native UP and a systematic false `orphan UP` warning in the input diagnostics (§12).
+
 ### 3.5 IME / soft keyboard (`BaseInputConnection`)
 
 `RemoteCanvas.onCreateInputConnection(EditorInfo)` (`RemoteCanvas.java:823-832`) returns a `BaseInputConnection` with:
@@ -586,6 +588,7 @@ Layout: `bVNC/src/main/res/layout/metakey.xml`.
 | `layoutMap` | Per-connection keyboard layout | `English (US)` | `ConnectionBean.LAYOUTMAP` |
 | `rAltAsIsoL3Shift` | Treat right-Alt as ISO L3 Shift (VNC overlay) | `true` | `global_preferences_vnc.xml:5` |
 | `defaultInputMethod` | Per-flavor input-mode default. **For RDP new connections**, `ConnectionBean.getDefaultInputMode:183-193` returns `TOUCHPAD_MODE` (touchpad with RDP-only gestures) instead of the SharedPreferences default. Stored `INPUTMODE` values are not migrated. | RDP touchpad, otherwise swipe-pan | `Constants.defaultInputMethodTag` |
+| **`rdpInputDiagnostics`** (RDP-only) | `SwitchPreferenceCompat` — enables the `RDPInput` input diagnostics (§12). Flipping it toggles `RdpInputLog.enabled` live. | `false` | `global_preferences_rdp.xml:38-42`, `Constants.rdpInputDiagnostics` / `DEFAULT_RDP_INPUT_DIAGNOSTICS`, initialised at `App.java:51-52`, live toggle at `GlobalPreferencesFragment.java:38-46` |
 
 **`doubleTapSlopDp`** (round 9): the SeekBar max was raised 48 → 150 dp (`global_preferences.xml:67-71`); default stays at 24 dp. Note for tuning: `slopPx = max(pref dp × density, viewConfiguration.getScaledDoubleTapSlop())` — values below the framework threshold (~100 dp on most devices) do not tighten stock detection, they only widen beyond it. Round 9 dropped the timeout slider's hardcoded 100 ms floor in favour of `viewConfiguration.getDoubleTapTimeout()` (per-Activity snapshot, see `TouchInputHandlerGeneric:160-170`).
 
@@ -733,6 +736,47 @@ Ranked by likelihood (most likely first).
     - Calls `sendModifierKeys(true)` (`:222-234`) which walks `modifierMap` and sends VKs for any modifiers that need to be added. `shouldSendModifier` suppresses duplicates.
     - Calls `LibFreeRDP.sendKeyEvent(session.getInstance(), vkCode, true)`.
 13. User releases Ctrl. Same flow with `down=false`. `sendModifierKeys(false)` releases any modifiers that should now be released.
+
+---
+
+## 12. RDP input diagnostics (opt-in)
+
+**Purpose.** Diagnose intermittent, timing-dependent RDP input faults (skipped keyboard / mouse events, and keys or buttons stuck DOWN on the host). The legacy `App.debugLog` logging was all-or-nothing, needed an app restart to change, and had no notion of DOWN/UP pairing. The diagnostics make a single `adb logcat -s RDPInput` capture self-explanatory.
+
+**Toggle.** RDP-only setting `rdpInputDiagnostics` (§6), default off. `App.java:51-52` initialises `RdpInputLog.enabled` at process start; `GlobalPreferencesFragment.java:38-46` flips it live. When disabled the whole facility costs one volatile read per event and builds no strings.
+
+| Component | File | Role |
+|---|---|---|
+| `RdpInputLog` | `remoteClientLib/src/main/java/com/undatech/opaque/util/RdpInputLog.java` | The logger. Single stable tag `RDPInput`; process-wide `public static volatile boolean enabled`; an `AtomicLong` sequence prefix on every line (logcat gives no cross-thread ordering). |
+| `InputDownTracker` | `remoteClientLib/src/main/java/com/undatech/opaque/input/InputDownTracker.java` | Pure-logic tracker of which VKs / unicode code points / mouse buttons are currently held on the wire. |
+| `InputDownTrackerTest` | `remoteClientLib/src/test/java/com/undatech/opaque/input/InputDownTrackerTest.java` | 9 JUnit 4 tests (see `TESTING.md` §3.1). |
+
+**Stages of one capture.** Lines are prefixed by stage + the sequence number. The `queued=Nms` on a WIRE line is the time the event waited in the single `inputExecutor` before being sent — the prime suspect for "laggy / delayed" input.
+
+| Stage | Meaning |
+|---|---|
+| `KEY enter` / `POINT enter` | Event entered `RemoteRdpKeyboard.processLocalKeyEvent` / `RemoteRdpPointer.sendPointerEvent`. |
+| `KEY drop reason=...` | Event consumed before the wire (repeated modifier, menu key, hardware mouse-button key, not-in-normal-protocol). |
+| `KEY ime chars=N` | An IME-committed batch was split for dispatch — **count only**, never the characters (see credential safety below). |
+| `WIRE key` / `WIRE uni` / `WIRE mouse` | Event reached the native boundary, with queue latency. |
+| `WARN ...` | Pairing anomaly or the close-time leak dump. |
+
+**Three anomaly signals.** (1) `WARN orphan UP` — an UP reached the wire for something never sent DOWN (a skipped / lost DOWN). (2) The close-time leak dump (`WARN LEAK at disconnect`) — anything still held at disconnect, the "stuck key" post-mortem. (3) The raw WIRE stream itself.
+
+**Where the wire-stage and tracker updates live.** `RdpCommunicator.sendKeyEvent` (`:320-331`), `sendUnicodeKey` (`:356-367`), and `sendRemoteMouseEvent` (`:190-197`) run on the single `inputExecutor` thread; they log the wire event and update the trackers. Enqueue timestamps are captured in `sendKeyEventOnNewThread` / `sendUnicodeKeyOnNewThread` / `sendRemoteMouseEventOnNewThread`. `RdpCommunicator.close` submits one executor task via `scheduleInputLeakCheck` (`:239-249`) so the dump observes every queued event already drained. Entry/drop logging lives in `RemoteRdpKeyboard.processLocalKeyEvent:54-125` and `RemoteRdpPointer.sendPointerEvent:111-114`.
+
+### 12.1 Invariants and caveats
+
+- **INV-033** — see `DESIGN_PRINCIPLES.md`. The two `InputDownTracker`s are touched only from the single `SendRdpInputThread`; they are deliberately not synchronized. The leak dump is submitted on that same thread so it observes a fully drained queue.
+- **Credential safety.** IME-committed text is logged as a character COUNT only (`KEY ime chars=N`), never the characters — they can contain typed passwords/OTPs. The wire stage already shows exactly what was sent.
+- **The leak dump reports true state, not necessarily a defect.** It can legitimately list a key or button physically held at disconnect, and a deliberately-locked on-screen modifier is intentionally left DOWN across keys. A non-empty dump is a signal to inspect, not a proven bug.
+- **Mid-session enable.** Turning the setting on starts the held-key tracking empty, so a key/button already held at that instant can produce one spurious pairing warning when it is finally released.
+- **Observer effect.** The logging is verbose and can itself perturb input timing.
+
+### 12.2 Boundaries
+
+- **In scope:** RDP keyboard / pointer input diagnostics, and the one `KEY_FLAG_SHIFT` ACTION_UP fix (§3.4).
+- **Out of scope:** changing any input behaviour beyond that fix; a live mid-hold stuck-key watchdog (rejected — needs a timer thread and produces false positives); logging the actual IME characters; fixing BUG-005 (a latent, non-default-config unmatched-unicode-DOWN bug found during review — recorded in `known_issues/BUG-005-unmatched-unicode-down.md`, not fixed here).
 
 ---
 
