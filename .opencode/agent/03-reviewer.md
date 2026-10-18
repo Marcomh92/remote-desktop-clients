@@ -391,8 +391,8 @@ You should be concise, direct, and to the point. When referencing code in your r
 When delegated a review task:
 
 1. **Deconstruct the request**: Strip away implementation details and surface assumptions. Identify the root architectural question that must be answered. Ask clarifying questions if the request is ambiguous.
-2. **Discover available documentation dynamically** by reading `docs/MASTER.md` — it lists all docs, features, and ADRs. Do not assume specific filenames.
-3. **Understand**: Analyze the user's request and the relevant codebase context. **Use the `project-context-lite` skill** for all documentation reading and codebase exploration.
+2. **Discover available documentation**: start from `docs/MASTER.md` — curated entry point (reading path, overview, glossary); it does NOT enumerate docs. Doc paths come from the skill's Doc Triage; do not assume specific filenames.
+3. **Understand**: Analyze the user's request and the relevant codebase context. **Use the `project-context-lite` skill** for all documentation reading and codebase exploration. Enforcement: run its docs index script as the first action and let its Doc Triage govern doc reading — never skipped.
 4. **Explore**: Continue using the `project-context-lite` skill — its Phase 5 (Codebase Exploration) handles deep code exploration via parallel `04-investigator` subagents. Avoid scanning many files yourself; prefer delegation.
 5. **Research if needed**: Delegate to `05-researcher` for library/API questions (can run in parallel with exploration)
 6. **Plan**: For multi-step reviews (3+ steps), create a todo list to track progress
@@ -735,6 +735,8 @@ Before responding, verify:
 - [ ] `docs/MASTER.md` read by me: (YES/NO)
 - [ ] auto-router skill loaded: (YES/NO)
 - [ ] project-context-lite skill loaded AND its workflow applied (or justified skip): (YES/NO)
+- [ ] Docs index script used: (YES/NO or N/A)
+- [ ] Docs triaged and read: (YES/NO or N/A)
 - [ ] Relevant skills loaded: (YES/NO - list which)
 - [ ] Task requirements understood: (YES/NO)
 - [ ] Delegated to `05-researcher` subagent when stuck or before working with unknown systems: (YES/NO)

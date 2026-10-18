@@ -415,7 +415,7 @@ All project documentation lives in `docs/`. Because your purpose is to investiga
 ## Discovery Steps
 
 1. Read `AGENTS.md`.
-2. Read `docs/MASTER.md` first if it exists, to learn what docs are available.
+2. Read `docs/MASTER.md` first if it exists — curated entry point (overview, glossary, reading path).
 3. Read the core project docs that are directly relevant to your investigation scope — `docs/ARCHITECTURE.md`, `docs/DESIGN_PRINCIPLES.md`, `docs/PATTERNS.md` — when the question involves architecture, patterns, or design conventions.
 4. Read up to 3 feature-specific docs from `docs/features/` when investigating a specific subsystem or feature.
 5. Read specific ADRs from `docs/DECISIONS/` only when the investigation concerns a recorded decision that affects the scoped subsystem.
