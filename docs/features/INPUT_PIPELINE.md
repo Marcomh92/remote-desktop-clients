@@ -1,3 +1,10 @@
+---
+description: Canonical map of mouse, keyboard, and modifier-key handling — every class and constant that turns a touch, keystroke, or IME character into a wire event for the RDP flavor.
+keywords: [touchpad, diagnostics]
+status: Current
+related: [PATTERNS.md, DESIGN_PRINCIPLES.md, CONNECTION_LIFECYCLE.md, UI_SHELL.md]
+---
+
 # docs/features/INPUT_PIPELINE.md
 
 > **Purpose.** This is the canonical map for **mouse behavior, keyboard handling, and modifier-key changes** in the aRDP flavor. Every class, line range, and constant involved in turning a screen touch / keystroke / IME character into a wire event to the remote desktop lives below.

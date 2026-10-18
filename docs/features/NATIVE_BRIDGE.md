@@ -1,3 +1,10 @@
+---
+description: JVM-to-native boundary — the JNI surface of remoteClientLib and vendored FreeRDP, its callbacks, and FreeRDP CLI argument building.
+keywords: [spice]
+status: Current
+related: [ARCHITECTURE.md, CONNECTION_LIFECYCLE.md, INPUT_PIPELINE.md]
+---
+
 # docs/features/NATIVE_BRIDGE.md
 
 > The JVM ↔ native boundary. Where Java turns into JNI and JNI turns into a real wire event.

@@ -1,3 +1,10 @@
+---
+description: Cross-cutting rules and invariants (DPP-*, INV-*, PER-*) that every change must respect.
+keywords: []
+status: Current
+related: [MASTER.md, ARCHITECTURE.md, PATTERNS.md, PERFORMANCE.md]
+---
+
 # DESIGN_PRINCIPLES.md
 
 Cross-cutting rules and "facts" every change must respect. Each rule has a stable identifier so it can be referenced from code review, PR descriptions, and the rest of the docs (`PAT-*`, `PER-*`, `INV-*`, `DPP-*`, `ADR-*`).

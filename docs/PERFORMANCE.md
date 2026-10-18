@@ -1,3 +1,10 @@
+---
+description: Performance budgets, throttling values, memory and GC notes, and known bottlenecks for the canvas and input pipeline.
+keywords: [latency-budgets]
+status: Current
+related: [ARCHITECTURE.md, DESIGN_PRINCIPLES.md, PATTERNS.md, INPUT_PIPELINE.md]
+---
+
 # PERFORMANCE.md
 
 Performance budgets, throttling mechanisms, and known bottlenecks. Performance hotspots all sit on the canvas view and the input pipeline.

@@ -1,4 +1,11 @@
-# MASTER.md — Documentation Index
+---
+description: Entry point for the aRDP fork — what it builds, module layout, glossary, and the reading path into the rest of the docs.
+keywords: []
+status: Current
+related: [ARCHITECTURE.md, DESIGN_PRINCIPLES.md, PATTERNS.md, INPUT_PIPELINE.md]
+---
+
+# MASTER.md — Project Entry Point
 
 > **Repo:** forked `remote-desktop-clients` (iiordanov). Re-targeted: this fork focuses on the **aRDP** Android client (RDP-only). VNC, SPICE, and Opaque flavors live alongside but are out of immediate scope.
 >
@@ -23,34 +30,20 @@ Plus a Custom VNC viewer (`CustomVnc-app`) parameterized via `gradle.properties`
 
 ---
 
-## 2. Documentation layout
+## 2. Where to start
 
-```
-docs/
-├── MASTER.md                   this file (entry point)
-├── ARCHITECTURE.md             module map + layer model
-├── DESIGN_PRINCIPLES.md       cross-cutting rules and "facts" you must respect
-├── PATTERNS.md                 recurring code idioms (input pipeline, Protocol-per-flavor, etc.)
-├── TESTING.md                  where tests live, where they don't, how to add
-├── PERFORMANCE.md              input throttle / frame throttle / GC notes
-├── features/                   one file per subsystem
-│   ├── INPUT_PIPELINE.md       mouse + keyboard + modifier-key flow (RDP focus)
-│   ├── CONNECTION_LIFECYCLE.md session start, framebuffer, disconnect, multi-instance
-│   ├── NATIVE_BRIDGE.md        JVM ↔ FreeRDP / SPICE JNI surface
-│   ├── FOREGROUND_SESSION_SERVICE.md `RemoteSessionService` foreground service: process holds foreground priority during an active remote-desktop session
-│   └── UI_SHELL.md             activities, settings, DB, layouts
-└── DECISIONS/                  ADRs (architecture decision records)
-    ├── ADR-0001-multi-module-flavor-strategy.md
-    └── ADR-0002-enable-on-back-invoked-callback.md
-```
+| # | Doc | Why read it |
+|---|---|---|
+| 1 | This file | Product scope, module layout, glossary |
+| 2 | `ARCHITECTURE.md` | Where each thing lives: module graph, layer model, three flows |
+| 3 | `DESIGN_PRINCIPLES.md` | The rules you must not violate (`DPP-*` / `INV-*` / `PER-*`) |
+| 4 | `features/INPUT_PIPELINE.md` | **The main target of upcoming work** — mouse, keyboard, modifier keys |
+| 5 | `PATTERNS.md` | The idioms new code should follow |
+| 6 | `features/CONNECTION_LIFECYCLE.md` | Connect → first frame → teardown, incl. the foreground session service |
+| 7 | `features/NATIVE_BRIDGE.md` | Where Java meets FreeRDP / SPICE |
+| 8 | `TESTING.md`, `PERFORMANCE.md` | What is tested; the latency and throttle budgets |
 
-### Read order
-
-1. This file
-2. `ARCHITECTURE.md` — where each thing lives
-3. `DESIGN_PRINCIPLES.md` — what not to violate
-4. `features/INPUT_PIPELINE.md` — **the main target of upcoming work**
-5. Other feature docs as needed
+The full doc inventory is derived from each file's frontmatter (description, status, related) — this file is deliberately not an index.
 
 ---
 
@@ -96,7 +89,7 @@ docs/
 
 The aRDP flavor now ships the Microsoft RDP Android app's session UX: a software keyboard with a floating toggle, a modifier row above the IME with one-shot / lock semantics, a "123" extra-keys page replacing the IME, no black borders at minimum zoom (cover-scale clamp over the **physical** full-screen height), touchpad cursor acceleration + fling + right-click long-press, a precise finger-tracking toggle, and an adaptive double-tap that disambiguates drag from double-click. VNC / SPICE / Opaque are byte-identical to the pre-RDP UX.
 
-Ten rounds of changes have landed:
+Thirteen rounds of changes have landed:
 
 | Round | Theme | Headline changes |
 |---|---|---|

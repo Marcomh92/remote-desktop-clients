@@ -1,3 +1,10 @@
+---
+description: Module map, layer responsibilities, and the boot/render, input, and teardown flows of the multi-module Android client.
+keywords: [module-graph]
+status: Current
+related: [MASTER.md, DESIGN_PRINCIPLES.md, PATTERNS.md, CONNECTION_LIFECYCLE.md, NATIVE_BRIDGE.md]
+---
+
 # ARCHITECTURE.md
 
 Module map, layer responsibilities, and the three flows every contributor should be able to draw from memory: **boot → connect → render**, **input → wire**, **disconnect → teardown**.

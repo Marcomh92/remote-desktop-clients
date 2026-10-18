@@ -1,3 +1,10 @@
+---
+description: Connect, first-frame, reconnect, and disconnect flow from the launcher tap through teardown, focused on the RDP flavor.
+keywords: [framebuffer]
+status: Current
+related: [ARCHITECTURE.md, DESIGN_PRINCIPLES.md, NATIVE_BRIDGE.md, INPUT_PIPELINE.md, FOREGROUND_SESSION_SERVICE.md]
+---
+
 # docs/features/CONNECTION_LIFECYCLE.md
 
 > What happens from "user taps Connect" through "first frame on screen" through "user taps Disconnect". Focus on the RDP flavor; VNC/SPICE/Opaque diverge only at clearly marked spots.

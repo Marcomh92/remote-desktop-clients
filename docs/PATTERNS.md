@@ -1,3 +1,10 @@
+---
+description: Recurring code idioms across the bVNC and remoteClientLib modules, numbered PAT-001 to PAT-018.
+keywords: []
+status: Current
+related: [ARCHITECTURE.md, DESIGN_PRINCIPLES.md, INPUT_PIPELINE.md, FOREGROUND_SESSION_SERVICE.md]
+---
+
 # PATTERNS.md
 
 Recurring code idioms used across `:bVNC` and `:remoteClientLib`. Each pattern has a stable identifier (`PAT-*`).

@@ -1,3 +1,10 @@
+---
+description: ADR-0002 records the project-wide predictive-back opt-out that keeps the legacy Activity.onBackPressed double-back disconnect reachable on Android 13+.
+keywords: [double-back-disconnect]
+status: Accepted
+related: [DESIGN_PRINCIPLES.md, INPUT_PIPELINE.md, UI_SHELL.md]
+---
+
 # ADR-0002 — Opt out of predictive-back via `android:enableOnBackInvokedCallback="false"`
 
 | Field | Value |

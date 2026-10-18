@@ -1,3 +1,10 @@
+---
+description: Where JVM unit and instrumented tests live, what remains manual-smoke-only, and how to run them.
+keywords: [junit]
+status: Current
+related: [MASTER.md, ARCHITECTURE.md, DESIGN_PRINCIPLES.md, INPUT_PIPELINE.md]
+---
+
 # TESTING.md
 
 > Read first: `MASTER.md` (overview), `ARCHITECTURE.md` §1 (module graph). Tests live almost entirely in `:common`. The rest of the codebase has no unit tests and minimal manual smoke coverage.

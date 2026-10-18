@@ -1,3 +1,10 @@
+---
+description: ADR-0001 records one android-application wrapper module per product and paid/free pair instead of Gradle product flavors.
+keywords: []
+status: Accepted
+related: [ARCHITECTURE.md, DESIGN_PRINCIPLES.md, UI_SHELL.md]
+---
+
 # ADR-0001 — Multi-module wrapper-strategy for paid/free RDP/VNC/SPICE flavors
 
 | Field | Value |

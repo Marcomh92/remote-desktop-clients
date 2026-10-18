@@ -1,3 +1,10 @@
+---
+description: Foreground service that keeps an in-flight remote-desktop session alive while the app is backgrounded, plus its notification and stop paths.
+keywords: [data-sync, background-kill]
+status: Current
+related: [CONNECTION_LIFECYCLE.md, ARCHITECTURE.md, PATTERNS.md, DESIGN_PRINCIPLES.md]
+---
+
 # docs/features/FOREGROUND_SESSION_SERVICE.md
 
 > Foreground `Service` that keeps the in-flight remote-desktop session process alive while the user is not looking at the canvas (device locked, app backgrounded, another window in front). Hosts a single notification with a content intent that returns the user to their live session.

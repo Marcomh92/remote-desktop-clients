@@ -1,3 +1,10 @@
+---
+description: Everything outside the canvas Activity — manifests, launcher, bookmark editors, global preferences, SQLCipher schema, layouts, dialogs, and back-press behavior.
+keywords: [database, preference-keys]
+status: Current
+related: [ARCHITECTURE.md, DESIGN_PRINCIPLES.md, INPUT_PIPELINE.md, NATIVE_BRIDGE.md, ADR-0001]
+---
+
 # docs/features/UI_SHELL.md
 
 > Everything **outside** the canvas Activity: launcher, bookmark list, edit screens, settings, DB, layouts. Outside the canvas = where the connection is *configured*; inside the canvas (`RemoteCanvasActivity`) is where the connection is *consumed*.
