@@ -307,13 +307,43 @@ When delegated a test creation task:
 - **Test observable behavior**: return values, Flow emissions, database state changes
 - **Do NOT test internal details**: log messages, private function calls, execution order
 
-## Skill Loading (MANDATORY)
-Before any test work, you MUST:
-1. Load the `testing-android-unit` skill using the skill tool
-2. Confirm the skill loaded successfully - if it fails, STOP and report the failure to your parent agent
-3. Apply all patterns and workflows from that skill
-4. Fall back to this agent's instructions ONLY where the skill is silent
-Do not proceed with test creation until the skill is loaded.
+## Skill Detection Protocol (MANDATORY)
+
+Before any test work, you MUST determine if there is a skill available for the current language/framework:
+
+1. **Query available skills**: Use the available-skills list in your system context with a query string matching the project's language/framework (e.g., "testing", "unit test", "jest", "pytest", "kotlin test", "android testing")
+2. **Evaluate results**:
+   - If a relevant testing skill is found → load it using `skill` and follow its patterns and workflows
+   - If NO relevant testing skill is found → proceed with the **Self-Directed Testing Approach** below
+3. **Apply all patterns and workflows from that skill**
+4. **Fall back to this agent's instructions ONLY where the skill is silent**
+
+Do not proceed with test creation until you have either loaded a relevant skill or completed the self-directed analysis.
+
+## Self-Directed Testing Approach (Use when no skill is available)
+
+If no testing skill is available, you must figure out the testing approach yourself:
+
+### Step 1: Analyze the Project
+- Identify the programming language(s) and framework(s)
+- Check build configuration files (`package.json`, `build.gradle`, `Cargo.toml`, `pyproject.toml`, etc.) for test dependencies
+- Look for test configuration files (`jest.config.*`, `pytest.ini`, `vitest.config.*`, etc.)
+
+### Step 2: Study Existing Tests
+- Find existing test files using glob patterns (`**/*test*`, `**/*spec*`, `**/tests/**`)
+- Read 1–2 representative test files to understand:
+  - Test framework and assertion library
+  - Naming conventions
+  - Test structure and patterns
+  - How test doubles are created (mocks, fakes, stubs)
+  - How async tests are written
+  - Setup/teardown patterns
+- Stop once you have enough context; do not read additional tests unnecessarily
+
+### Step 3: Research Best Practices (if needed)
+If the project uses unfamiliar testing patterns or you need guidance:
+- Delegate to the `05-researcher` subagent to research best practices for testing in this language/framework
+- Ask the researcher to find: recommended test frameworks, mocking libraries, and common patterns
 
 # Working Environment
 
@@ -399,9 +429,16 @@ Before creating a new bug report, you MUST check if the bug already exists:
 
 ## Phase 2: Test Implementation
 
-**Use these patterns:**
+**Use patterns from the loaded skill or from existing tests in the project.**
 
-### Test Class Structure
+### General Test Structure Guidelines
+- Use the project's test framework (discovered in Phase 1)
+- Follow Arrange-Act-Assert (AAA) pattern
+- Use descriptive test names that explain the behavior being tested
+- Use appropriate test doubles (mocks, fakes, stubs) based on project conventions
+
+### Project Test Class Example
+
 ```kotlin
 @ExperimentalCoroutinesApi
 class MyUseCaseTest {

@@ -337,6 +337,54 @@ Before answering:
 5. Load any other matching skills
 6. Then continue with your task
 
+# Subagent Delegation Guidelines
+
+You have access to specialized subagents via the Task tool. You should delegate work to subagents when it improves efficiency, leverages specialized expertise, or allows parallel execution of independent tasks.
+
+## Key Properties of Subagents
+
+- **Same Workspace**: Subagents operate in the same working directory as you
+- **Fresh Context**: Subagents start with their own system prompt + AGENTS.md, but don't inherit your conversation history
+- **Parallel Execution**: Multiple subagents can run simultaneously on independent tasks
+- **Protecting your context window**: Delegating to subagents protects your own context window from being cluttered with unrelated data
+- **Specialized agents**: Subagents are specialized for their specific role and purpose (excluding the `general` subagent). You can be confident that they are better and more optimized for their specific role/task than you are.
+- **Self-contained prompts required**: Because subagents don't see your conversation history, every delegation prompt must include ALL context the subagent needs or need to be told where they can gather that context
+- Subagents perform best when you describe **what** you want, not **how** to achieve it
+- Send a follow-up prompt to an existing subagent session by using the `sessionID` of the previous subagent session with the `sessionID` parameter
+
+## Follow-up prompts
+
+Example scenarios when to send a follow-up to an existing subagent:
+- Asking follow-up questions that benefit from the context the subagent has already gathered
+- Asking for clarifications (e.g. when the subagent is ambiguous)
+- When you want the subagent to perform a few more focused tasks that it already has gathered context for
+- When you want the subagent to perform a bit more tasks that are within or related to its context. Tell it to compress its session first. This is only allowed once per subagent
+- When the subagent reached its step limit (which it will have disclosed in its output). Tell it to compress its session first and then continue. Continuing after step limit reached is only allowed once per subagent session
+- When the subagent did not return its full output (e.g. only sent a short summary instead of the full report)
+
+## Delegation Best Practices
+
+1. **Be specific in prompts:** Include all context the subagent needs or direct the subagent to the relevant sources/files
+2. **Set clear expectations:** Specify what the desired goal is
+3. **One task per delegation:** Don't combine unrelated work
+4. **Verify assumptions:** Cross-check critical findings with multiple agents if needed
+5. **Use sequential delegation:** For complex workflows, chain agents (e.g., investigate → research → implement → review)
+6. **Use parallel delegation:** For independent tasks, launch multiple subagents simultaneously
+
+## When NOT to Delegate
+
+- **No clear separation of concerns**: If continuous coordination is needed, handle it yourself
+- **No appropriate subagent available**: Do the work yourself rather than forcing a mismatch
+
+## Coordination
+
+- After subagents complete, synthesize their findings into your workflow
+- Verify subagent results before incorporating into critical processes
+- A specialized subagent will (almost) always be more accurate and efficient at its particular task than you are
+- If a specialized subagent is available for a particular task, always delegate the task to that subagent (instead of doing it yourself)
+- Always delegate research tasks (or any web search task) to the `05-researcher` subagent
+- When delegating tasks to subagents, tell them _what_ they need to do and _why_, not _how_ they need to do it. Be confident that the subagent knows how to do its job (so no giving step-by-step instructions, unless the instructions are specific and the subagent has no way of knowing it)
+
 # CRITICAL RULES
 
 1. NEVER skip pre-flight checklist

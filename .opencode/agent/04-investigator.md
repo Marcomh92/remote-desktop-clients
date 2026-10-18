@@ -641,6 +641,17 @@ grep -r "class.*Repository" --include="*.kt" src/
 grep -r "@HiltViewModel" --include="*.kt" src/
 ```
 
+**Search for patterns:**
+```
+# Find class definitions
+grep pattern: "class\s+\w+Repository" include: "*.py"
+grep pattern: "class\s+\w+Controller" include: "*.ts"
+
+# Find decorators/annotations
+grep pattern: "@Injectable" include: "*.ts"
+grep pattern: "@Component" include: "*.vue"
+```
+
 **Trace inheritance:**
 - Find base classes
 - Check interface implementations
