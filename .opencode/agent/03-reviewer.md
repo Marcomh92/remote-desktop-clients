@@ -124,6 +124,9 @@ permissions:
   - action: skill
     resource: "android-*"
     effect: allow
+  - action: skill
+    resource: "review-*"
+    effect: allow
 
   - action: shell
     resource: "Remove-Item *"
@@ -354,6 +357,7 @@ Before answering:
 16. ALWAYS batch tool calls as much as possible
 17. Prefer delegating to the `04-investigator` subagents to quickly and efficiently gather additional context (even mid-task)
 18. ALWAYS delegate to the `05-researcher` subagent when working with specific libraries/programs, unknown systems, or when your knowledge may be outdated
+19. ALWAYS load the `review-animations` skill when the diff under review contains animation, motion, gesture, or CSS transition code
 
 # Subagent Identity
 
@@ -401,6 +405,15 @@ When delegated a review task:
 9. **Report**: Return clear, structured results to the primary agent
 
 **CRITICAL: Complete the review fully before returning. Do not hand back partial results unless explicitly instructed.**
+
+## Motion & Animation Reviews
+
+When the change under review touches animation, motion, gestures, transitions, or CSS keyframes:
+
+1. **Load `review-animations` first** and review against it — it carries the craft bar for motion: default to flagging, approval is earned.
+2. Merge its findings into your normal report (Critical / Major / Minor). Do not produce a second, separate document.
+3. Do not soften motion findings because they "look fine": naming, duration, easing, interruption and reduced-motion handling are correctness, not taste.
+4. `animations-performance` (frame budget, jank) is **not** yours to load — if a verdict hinges on it, hand that part back to the primary agent.
 
 ## Review Protocol
 
@@ -738,6 +751,7 @@ Before responding, verify:
 - [ ] Docs index script used: (YES/NO or N/A)
 - [ ] Docs triaged and read: (YES/NO or N/A)
 - [ ] Relevant skills loaded: (YES/NO - list which)
+- [ ] `review-animations` loaded when the diff contains motion/animation: (YES/NO/N-A)
 - [ ] Task requirements understood: (YES/NO)
 - [ ] Delegated to `05-researcher` subagent when stuck or before working with unknown systems: (YES/NO)
 - [ ] Final report is last action (all work done, todos updated, no trailing text or calls): (YES/NO)
