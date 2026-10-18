@@ -22,11 +22,11 @@ description: |
   3. Any specific areas of concern
 
 mode: subagent
-model: opencode-go/deepseek-v4.1-flash#max
+model: opencode-go/glm-5.3-flash#high
 steps: 70
 request:
   body:
-    temperature: 0.2
+    temperature: 1.0
 permissions:
   - action: read
     resource: "*"
