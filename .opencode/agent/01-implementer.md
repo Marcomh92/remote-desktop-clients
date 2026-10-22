@@ -205,11 +205,67 @@ Resolve docs location: check `AGENTS.md` for a custom path; default `./docs/`; s
 
 When making changes to code:
 
-- **Follow existing conventions**: Match the style, structure, and patterns of the surrounding code
+- **Follow existing conventions**: Match the style, structure, and patterns of the surrounding code — style is decided by the codebase, not by preference
 - **Verify libraries**: Never assume a library is available. Check build.gradle, imports, or neighboring files first
-- **Minimal changes**: Make the smallest correct change needed. Avoid unnecessary refactoring
-- **No comments by default**: Only add comments when the "why" is non-obvious. Never add comments explaining "what" the code does
+- **Minimal changes**: Make the smallest correct change needed. No drive-by refactors, renames, reformatting, or import reshuffling
 - **Security**: Never expose secrets, keys, or credentials in code or responses
+
+## Readable & Reviewable Code
+
+The human reviews a **diff**, not a codebase. Optimize for how fast they can follow it.
+
+- **The diff is the unit of review.** One concern per change. Never mix a fix with a rename, a reformat, or a moved block — that buries the real change. If a file needs both, make them separate edits.
+- **Order for the reader.** Entry point and public API first, then private helpers in the order they are called. One idea per function.
+- **Short and flat.** Guard clauses over nested `if`s; nesting at most 2 levels deep. If following a function needs scroll-travel, it is too long.
+- **Explicit over clever.** No nested ternaries, no dense one-liners, no side effects hidden inside expressions, no operator chains a reviewer must decode. Prefer a named local over a comment explaining an expression.
+- **Names carry the intent.** Full words, no invented abbreviations, booleans read as predicates (`isLoading`, `hasAccess`). A name that needs a comment is the wrong name.
+- **Data flow stays visible.** No mutation at a distance, no out-parameter surprises. If understanding a call site requires tracing three files, restructure it.
+- **File shape.** One public type per file, file name = the main symbol, related declarations grouped — following whatever the surrounding code already does.
+- **Self-review before reporting.** Read your own diff top to bottom as the reviewer would. Every stop, every "why?", every jump to another file is a defect — fix the structure, not the comment.
+
+## Doc Comments
+
+Doc comments document the **contract**, not the implementation. They are written for the caller and must stay true — a stale doc comment is worse than none. The rules below apply to whatever the language and project use for declaration docs (doc comment blocks, docstrings, `///` comments); follow the existing file's syntax and tags.
+
+- **The first sentence is the summary**: third person, present tense, ends with a period. `Returns the active session, or null when no user is logged in.` For most callers that one sentence is the whole doc.
+- **Document what the signature cannot say**: valid ranges, units, required non-null invariants; what `null` or an empty result means; documented failure modes (`@throws` — only those callers must handle); side effects (mutates the receiver, writes to disk); and concurrency, suspending, or IO behaviour.
+- **Never restate the signature.** `@param userId the user id` is noise. Write `@param userId the stable account ID; resolve it from an email first.` Follow the tag style neighbouring files already use — prose with parameter links where they don't use tags.
+- **Add the why where the contract surprises**: why this algorithm, this limit, this ordering. Never a line-by-line description of the body.
+- **Link, don't repeat**: reference related types, constants, and units by name — with the language's link or `@see` syntax where it has one — instead of repeating their values.
+- **Required** on: every public/internal API of a module, anything with a non-obvious contract, and every signature changed in this task. **Not required** on: trivial private one-liners whose name and types already say everything, overrides documented by their base declaration, and self-evident data holders.
+- **Never** add `@author`, `@since`, or version notes, and never leave a doc describing previous behaviour — update the doc comment in the same edit as the code.
+
+## Inline Comments
+
+A comment is justified only when it says something the code cannot. The test: delete it — would the reader now have to guess, or go searching elsewhere for a reason? Keep those; delete the rest.
+
+**Keep — the code cannot say it:**
+
+- External constraints: platform or API quirks, spec clauses, protocol/format rules, third-party bugs — with the ticket or link when the reason lives elsewhere.
+- Non-obvious trade-offs and deliberate workarounds, plus the condition that makes them removable.
+- Invariants and ordering that hold across distance (`must run before the pool is initialised`).
+- Provenance of magic numbers and their units (`// 90s — Stripe's webhook retry window`).
+
+**Delete — noise:**
+
+- Narrating the next line (`// increment counter`, `// return the result`).
+- Section banners over three obvious lines.
+- Commented-out code — delete it, git remembers.
+- Changelog, author, or date notes; `TODO` with no reason or owner.
+- Anything that only paraphrases a well-named function — extract the function and let its name be the comment.
+
+Rules of thumb: one line where possible, placed at the surprising decision rather than at the top of the function. If a comment has to explain a *block*, extract that block into a named function instead. Write comments in the language the codebase already uses.
+
+## Self-Healing Comments in Code You Touch
+
+Legacy comments in these projects often predate these rules. Do not leave a violation in place on a declaration you are already changing.
+
+- **Scope = the declarations this change touches.** When you modify a function, class, or module, its doc comment and the comments inside its body are yours to fix. Do not sweep neighbours, files, or unrelated declarations — that turns a reviewable fix into an unreviewable cleanup.
+- **Rewrite, don't append.** Replace a stale or noisy doc comment with a correct contract; replace a narration comment with a useful why, or delete it. Never layer a new comment on top of the old one.
+- **Precedence over minimal diff, inside the touched declaration.** A correct comment beats a smaller diff: a stale contract is a defect, not technical debt. Outside the touched declaration, minimal diff wins.
+- **Never rename or restructure just to avoid touching a comment.** Touch the comment, not the code around it.
+- **Bounded escalation.** If healing would mean rewriting a large legacy comment block well beyond the declaration you touched, leave it and report it — the primary agent decides whether it becomes its own task.
+- **No comment-only sweeps.** Do not open a file to clean comments that your task does not otherwise change.
 
 ## Android Architecture Awareness
 
@@ -279,9 +335,10 @@ Before making any code changes:
 - **Memory Management:** Listeners and callbacks properly unregistered. No context leaks
 
 **Documentation:**
-- Add concise KDoc documentation to all new functions and classes describing what they do and how they work
-- Update KDoc documentation for modified functions and classes to reflect the new behavior
-- Keep documentation brief and focused on the public API; do not document internal implementation details unless non-obvious
+- Add a doc comment to every new declaration whose contract a caller cannot infer from the name and signature
+- Update the doc comment of every modified declaration in the same edit — never leave docs describing old behaviour
+- **Heal the comments of every declaration you touch** per *Self-Healing Comments in Code You Touch* — rewrite stale or noisy ones, never append
+- A good doc comment is defined under *Doc Comments* in Coding Standards; comment elsewhere only where *Inline Comments* allows it
 
 **Self-Correction Triggers:**
 
@@ -354,10 +411,10 @@ Follow these instructions when implementing Android/Kotlin code:
 1. Read the delegation prompt carefully to understand the exact requirements and constraints
 2. Review existing code patterns in the project before writing new code
 3. Make minimal, focused changes that directly address the requirements
-4. Write readable and understandable code that is well-structured, modular, reusable, and contains inline code comments explaining internal behavior where beneficial
-5. Ensure all new or modified functions and classes have concise KDoc documentation describing what it does, how it works, and what important considerations are
+4. Write readable, reviewable code — the rules under *Readable & Reviewable Code* in Coding Standards are part of the deliverable, not a preference
+5. Document every new or modified declaration per *Doc Comments* in Coding Standards — the contract, not a narration of the body; and comment only where *Inline Comments* allows it
 6. Respect Clean Architecture layer boundaries — do not let business logic leak into the UI layer
-7. Ensure all new or modified functions and classes have concise KDoc documentation describing what they do and how they work
+7. **Heal the comments of every declaration you touch** per *Self-Healing Comments in Code You Touch*: rewrite a stale or noisy doc comment, rewrite or delete a narration comment, never append a second comment on top of an old one — and never widen that into untouched code
 8. Use Hilt constructor injection for dependencies. Use `@HiltViewModel` for ViewModels
 9. Model UI state with sealed classes and expose via `StateFlow`. Handle loading, error, and empty states
 10. Use `suspend` functions for async operations and proper coroutine scopes (`viewModelScope` or injected `CoroutineScope`)
