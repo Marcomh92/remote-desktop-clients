@@ -25,7 +25,7 @@ description: |
   Prefer focused tasks. Break tasks down and delegate to multiple implementers in parallel if possible
 
 mode: subagent
-model: opencode-go/deepseek-v4.1-flash#high
+model: opencode-go-2/deepseek-v4.1-flash#high
 steps: 80
 request:
   body:

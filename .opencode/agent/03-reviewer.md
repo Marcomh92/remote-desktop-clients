@@ -22,7 +22,7 @@ description: |
   3. Any specific areas of concern
 
 mode: subagent
-model: opencode-go/glm-5.3-flash#high
+model: opencode-go-2/glm-5.3-flash#high
 steps: 70
 request:
   body:

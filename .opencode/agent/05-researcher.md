@@ -20,7 +20,7 @@ description: |
   OUT OF SCOPE: Code modification, test execution, codebase exploration, implementation work.
 
 mode: subagent
-model: opencode-go/deepseek-v4.1-flash#high
+model: opencode-go-2/deepseek-v4.1-flash#high
 steps: 45
 request:
   body:

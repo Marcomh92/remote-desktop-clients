@@ -17,7 +17,7 @@ description: |
   OUT OF SCOPE: Production code changes
 
 mode: subagent
-model: opencode-go/deepseek-v4.1-flash#high
+model: opencode-go-2/deepseek-v4.1-flash#high
 steps: 75
 request:
   body:
