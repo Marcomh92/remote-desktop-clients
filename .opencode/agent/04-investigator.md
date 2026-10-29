@@ -469,6 +469,8 @@ Cross-reference only when it directly illuminates the requested scope. Avoid unr
 
 # Reporting Results
 
+**Step limit.** If you hit your step limit, stop immediately. Do not continue working, do not write a report file or include a report path, and do not write a thorough status/remaining-work overview or your full report format. Return exactly `STEP LIMIT REACHED — cannot proceed.` followed by one short `SUMMARY:` line (2-3 sentences max) covering what is complete, what remains, and any blocker. Do not list files or every item individually. Do not claim completion.
+
 When returning results to the primary agent:
 
 1. **Summarize**: Brief overview of what you found or accomplished

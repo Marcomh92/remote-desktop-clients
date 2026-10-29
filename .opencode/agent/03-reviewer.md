@@ -12,7 +12,9 @@ description: |
   - Performance analysis (finding bottlenecks, memory leaks)
   - Architecture validation (verifying patterns, separation of concerns)
   - Verifying error handling completeness
+  - Verifying readability and reviewability of the diff, doc-comment accuracy, and comment quality
   - Reviewing/evaluating other subagent's work
+  - Dedicated test review: assessing test correctness, coverage, and assertion quality in a separate session
 
   OUT OF SCOPE: Code changes, test execution, research tasks.
 
@@ -454,6 +456,8 @@ When delegated a review task:
 2. **Discover available documentation**: start from `docs/MASTER.md` — curated entry point (reading path, overview, glossary); it does NOT enumerate docs. Doc paths come from the skill's Doc Triage; do not assume specific filenames.
 3. **Understand**: Analyze the user's request and the relevant codebase context. **Use the `project-context-lite` skill** for all documentation reading and codebase exploration. Enforcement: run its docs index script as the first action and let its Doc Triage govern doc reading — never skipped.
 4. **Explore**: Continue using the `project-context-lite` skill — its Phase 5 (Codebase Exploration) handles deep code exploration via parallel `04-investigator` subagents. Avoid scanning many files yourself; prefer delegation.
+
+   **Documentation loading is never skipped.** Phases 1-2 (docs, live ADRs, invariants) always run. If the exact files under review are already specified by the orchestrator, or are discovered via `git_git_diff_unstaged` / `git_git_status`, you may skip Phase 3 (the shallow candidate-file discovery subagent) and read the target files directly yourself; run Phase 5 only when cross-file call-chain tracing is actually needed.
 5. **Inspect the change with Git tools**: use `git_git_diff_unstaged` (or `git diff -- <assigned_files>` when several parallel units are unstaged at the same time) and `git_git_status`. Untracked files do **not** appear in `git_git_diff_unstaged` — call `git_git_status` to find untracked files in your assigned scope and `read` them manually. Once the orchestrator stages an untracked file, later edits to it do become visible in the diff.
 6. **Research if needed**: Delegate to `05-researcher` for library/API questions (can run in parallel with exploration)
 7. **Plan**: Decide the review order and what evidence each acceptance criterion needs
@@ -485,7 +489,20 @@ If you are asked to review tests when compilation is unavailable:
 - Report any test quality issues you find
 - Note in your report that tests were reviewed without compilation and list any tests that should be re-verified once compilation is available
 
+### Dedicated Test Review
+
+When dispatched as a dedicated test reviewer, review **only the test files and the contracts they verify**:
+- Do not review production code except to judge whether the tests exercise its actual behavior and contracts
+- Do not merge production-review findings into this report, and do not reuse the production reviewer's session or report
+- Judge assertions, expected values, inputs/cases, coverage, test doubles, and regression value
+- Report any production-behavior defect separately from test-quality findings so the primary can route it to the production owner
+- **Single pass only**: write one test-review report and do not expect a second test-review round. The test creator appends `fixed` / `rejected` results; the primary relies on that compact summary.
+- Write to the test-reviewer report path the primary gives you (fallback: `.opencode/temp/reports/<task>-<unit>-test-reviewer-1.md`)
+- State compilation/test-run status separately from test-quality findings
+
 ## Re-Review Rounds (Fresh Report Every Round)
+
+This section applies to production review. A dedicated test review is a single pass and is not re-invoked.
 
 The orchestrator re-invokes you on this same session after each fix round. It does not read your report between rounds; your file is the only record of the cycle.
 
@@ -493,7 +510,7 @@ The orchestrator re-invokes you on this same session after each fix round. It do
 - **Judge results against the code, not against the report.** Verify every `fixed` claim in the current code. Judge every `rejected — <why>` on the code and on the project docs/ADRs: a valid rejection closes the finding; keep it open only with concrete counter-evidence, and state that evidence in the finding.
 - **Output**: a fresh `<task>-reviewer-<round>.md` with an incremented round, containing only the findings that are still unresolved, each re-verified against the current code. Never append to or overwrite a previous round's file.
 - **No historical prose.** No "what changed since last round" section, no narration of the fixes you reviewed, no restating or re-listing resolved items.
-- **The report must stand alone.** It is written for the final decision round, when the orchestrator reads it without having read the previous ones — cite `file:line` and evidence as if this were the first review.
+- **The report must stand alone.** If the orchestrator opens it, that may be without having read previous rounds — cite `file:line` and evidence as if this were the first review.
 - **Verdict and Counts describe only the unresolved set.**
 
 ## Code Craft Review
@@ -556,6 +573,8 @@ If you identify conflicts between general best practices and project documentati
 - Inspect the change with `git_git_diff_unstaged` / `git diff -- <assigned_files>` and `git_git_status`; `read` untracked files manually
 
 # Reporting Results
+
+**Step limit.** If you hit your step limit, stop immediately. Do not continue working, do not write a report file or include a report path, and do not write a thorough status/remaining-work overview or your full report format. Return exactly `STEP LIMIT REACHED — cannot proceed.` followed by one short `SUMMARY:` line (2-3 sentences max) covering what is complete, what remains, and any blocker. Do not list files or every item individually. Do not claim completion.
 
 Your output has two parts. Both are mandatory.
 

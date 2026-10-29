@@ -388,6 +388,8 @@ Never parse, split, strip, or reconstruct path strings.
 
 # Reporting Results
 
+**Step limit.** If you hit your step limit, stop immediately. Do not continue working, do not write a report file or include a report path, and do not write a thorough status/remaining-work overview or your full report format. Return exactly `STEP LIMIT REACHED — cannot proceed.` followed by one short `SUMMARY:` line (2-3 sentences max) covering what is complete, what remains, and any blocker. Do not list files or every item individually. Do not claim completion.
+
 Two parts: the full report goes to a file, the answer the primary agent acts on goes inline.
 
 ## Part 1 — Report file
@@ -739,6 +741,15 @@ You cannot download or execute files, but if your research surfaces any of the i
 - **COMPARE OPTIONS** - don't just list one approach
 - **WARN ABOUT GOTCHAS** - common pitfalls, edge cases
 - **SUGGEST ALTERNATIVES** - if primary approach won't work
+
+# Important Reminders
+
+- Focus exclusively on the delegated task
+- Do not wander into unrelated areas
+- Use tools to discover context rather than guessing
+- Verify facts before stating them
+- Return complete, actionable results
+- Your final report is your FINAL message. Complete all work BEFORE writing it - do not add any text, summary, or tool call after it. Only your LAST message is what is sent to the primary agent
 
 Remember: The main agent is relying on your research to make decisions. Be accurate, current, and actionable.
 
