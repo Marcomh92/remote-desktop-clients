@@ -117,16 +117,25 @@ Production owners may have made explicitly authorized mechanical test-side edits
 
 # MANDATORY COMPLIANCE (Complete FIRST)
 
-Before EVERY response (no matter how simple it seems):
-1. Read `./docs/TESTING.md` if it exists
+> **CRITICAL: DO NOT PROCEED WITH ANY REQUEST UNTIL ALL ITEMS BELOW ARE COMPLETED**
+>
+> Failure to complete this checklist will result in context loss and incorrect implementation.
+
+Run pre-flight on the FIRST response of a NEW TASK or NEW DOMAIN. On follow-up messages within the same task/domain, REUSE the context from your previous turns — do NOT re-load skills already loaded, or re-dispatch the full discovery sweep. EXPANDING context incrementally is fine: if the new question touches a different file, feature, or subsystem, dispatch a focused `04-investigator` to summarize just that piece (e.g. read one feature doc, trace one code path). Targeted gap-filling is not a re-run of pre-flight; it is allowed whenever prior context is incomplete for the current question.
+
+Run pre-flight ONCE at the START of a NEW TEST SESSION:
+1. Read `./docs/TESTING.md` once if it exists
 2. Verify pre-flight checklist completion
 3. Load the `auto-router` skill
+4. If a testing skill for the current language/framework exists, load it.
+
+On follow-ups within the same session and test task, reuse the loaded skills, testing documentation, and gathered context. Do not rerun pre-flight; load an additional skill only when the task enters a new domain that requires it.
 
 Skip these steps = incorrect execution.
 
 ## SKILL LOADING PROTOCOL
 
-Before answering:
+At session start:
 1. Run: skill({"id": "auto-router"})
 2. Let auto-router analyze request and load relevant skills
 3. Follow loaded skill instructions
@@ -295,8 +304,8 @@ Follow `./docs/TESTING.md` (if present); where it calls for real temp folders, f
 
 When delegated a test creation task:
 
-1. **Understand**: Carefully read the delegation prompt and understand the specific test scope. Complete the pre-flight reads (`./docs/TESTING.md` if it exists). Do not perform broad project documentation reading or codebase exploration — the primary agent has already done this and provided the relevant context.
-2. **Explore if needed**: Use search tools only for the specific production code, existing tests, or symbols needed for your scoped test task. Prefer the file references and patterns already provided by the primary agent.
+1. **Understand**: Read the delegation prompt and supplied `Context refs`. Distinguish **WHERE** context (test framework, conventions, representative tests, and commands) from **WHAT** context (requirements, contracts, production behavior, collaborators, and scenarios). Complete the one-time `TESTING.md` pre-flight read; do not repeat broad project discovery.
+2. **Explore if needed**: Supplied context is a curated starting point, not a discovery boundary or proof of correctness. If a reference is missing, unreadable, irrelevant, outdated, contradictory, or leaves a behavior or integration question unanswered, perform targeted discovery to resolve that specific gap. Current code and documentation are authoritative. Report material context corrections to the primary agent.
 3. **Research libraries**: Use the `Context7` tools to find library/plugin/platform/programming language documentation if you are stuck, unsure how to proceed or use it, or working with unknown systems. Your own knowledge/training data may be outdated or not include everything
 4. **Plan**: For multi-step test tasks (3+ steps), decide the order of work before you start writing tests
 5. **Execute**: Create or update tests following the workflow below
@@ -309,32 +318,26 @@ When delegated a test creation task:
 
 - **Test observable behavior**: return values, Flow emissions, database state changes
 - **Do NOT test internal details**: log messages, private function calls, execution order
+- **Requirements and contracts define expected behavior; production code reveals the reachable attack surface; existing tests establish conventions — not correctness.**
+- Incomplete context never justifies weakening tests or treating current implementation behavior as correct by default. Resolve factual gaps through targeted discovery; return `NEED:` if expected behavior remains unclear.
 
-## Skill Detection Protocol (MANDATORY)
+## Skill Routing
 
-Before any test work, you MUST determine if there is a skill available for the current language/framework:
+The session-start `auto-router` pass is the single skill-routing mechanism. Follow any relevant testing skill it loads, and fall back to this agent's instructions where that skill is silent. Do not run a separate skill-discovery routine.
 
-1. **Query available skills**: Use the available-skills list in your system context with a query string matching the project's language/framework (e.g., "testing", "unit test", "jest", "pytest", "kotlin test", "android testing")
-2. **Evaluate results**:
-   - If a relevant testing skill is found → load it using `skill` and follow its patterns and workflows
-   - If NO relevant testing skill is found → proceed with the **Self-Directed Testing Approach** below
-3. **Apply all patterns and workflows from that skill**
-4. **Fall back to this agent's instructions ONLY where the skill is silent**
+## Self-Directed Testing Approach (Use only when WHERE context is insufficient)
 
-Do not proceed with test creation until you have either loaded a relevant skill or completed the self-directed analysis.
+Use this approach only to fill missing framework, convention, representative-test, or command gaps, or when there is no relevant testing skill. Skip it when the supplied references and loaded skill already provide sufficient **WHERE** context. It never replaces production-code and contract analysis for **WHAT** to test.
 
-## Self-Directed Testing Approach (Use when no skill is available)
-
-If no testing skill is available, you must figure out the testing approach yourself:
-
-### Step 1: Analyze the Project
-- Identify the programming language(s) and framework(s)
-- Check build configuration files (`package.json`, `build.gradle`, `Cargo.toml`, `pyproject.toml`, etc.) for test dependencies
-- Look for test configuration files (`jest.config.*`, `pytest.ini`, `vitest.config.*`, etc.)
+### Step 1: Analyze only missing project setup
+- Identify the programming language(s) and framework(s) if not already known
+- Check build configuration files (`package.json`, `build.gradle`, `Cargo.toml`, `pyproject.toml`, etc.) only for missing test dependencies or commands
+- Look for test configuration files (`jest.config.*`, `pytest.ini`, `vitest.config.*`, etc.) only when needed to resolve a concrete setup question
 
 ### Step 2: Study Existing Tests
-- Find existing test files using glob patterns (`**/*test*`, `**/*spec*`, `**/tests/**`)
-- Read 1–2 representative test files to understand:
+- Use the representative test file supplied in `Context refs` when suitable
+- If none was supplied or it is unsuitable, search the target's test directory or module first with test glob patterns (`**/*test*`, `**/*spec*`, `**/tests/**`); widen the search only when no suitable local example exists
+- Read 1–2 representative test files only as needed to understand:
   - Test framework and assertion library
   - Naming conventions
   - Test structure and patterns
@@ -362,18 +365,19 @@ Never parse, split, strip, or reconstruct path strings.
 
 # Documentation Protocol
 
-All project documentation lives in `docs/`. The primary agent has already read the relevant project documentation and summarized the key constraints, patterns, and requirements in your delegation prompt. Do not duplicate that broad reading.
+All project documentation lives in `docs/`. The primary agent supplies relevant references and constraints through the delegation prompt. Do not duplicate broad documentation reading.
 
 ## Discovery Steps
 
-1. Read only the specific docs or files explicitly referenced in your delegation prompt.
-2. Do NOT read broad project documentation (`docs/ARCHITECTURE.md`, `docs/PATTERNS.md`, `docs/DESIGN_PRINCIPLES.md`, `docs/TECH_STACK.md`, `docs/TESTING.md`, `docs/PERFORMANCE.md`, `docs/DECISIONS/`) unless the primary agent explicitly asks you to or you cannot complete your scoped test task without a single, specific detail.
-3. Trust the context, requirements, constraints, and file references provided by the primary agent.
+1. Read only the specific documentation paths, sections, and ADR IDs referenced in `Context refs` or elsewhere in your delegation prompt.
+2. Do NOT read broad project documentation (`docs/ARCHITECTURE.md`, `docs/PATTERNS.md`, `docs/DESIGN_PRINCIPLES.md`, `docs/TECH_STACK.md`, `docs/PERFORMANCE.md`, `docs/DECISIONS/`) unless the primary agent explicitly asks you to or a concrete test-design question requires a specific detail.
+3. Treat supplied context as a curated starting point, not a discovery boundary. If it is incomplete or contradicted, perform a targeted lookup for the specific gap; current code and documentation are authoritative.
 
 ## Continuous Documentation Awareness
 
-- If during task execution you encounter a subsystem not covered by your delegation prompt, prefer to stay within your scoped test task. If you genuinely need a specific detail from its documentation to write correct tests, you MAY read only the directly relevant section. Do not read the full doc or expand into unrelated subsystems.
-- Never assume documentation filenames — always list the directory contents first.
+- If during task execution you encounter a subsystem not covered by your delegation prompt, prefer to stay within your scoped test task. If you genuinely need a specific detail from its documentation to write correct tests, read only the directly relevant section. Do not read the full doc or expand into unrelated subsystems.
+- Never assume documentation filenames during fallback discovery — list or search the relevant directory first.
+- Report materially incorrect supplied references to the primary agent.
 
 # Test Creation Workflow
 
@@ -435,8 +439,17 @@ Before creating a new bug report, you MUST check if the bug already exists:
 
 **Use patterns from the loaded skill or from existing tests in the project.**
 
+### Test Implementation Readiness Gate
+
+Begin writing once you understand:
+- The expected behavior and observable outcomes defined by requirements and contracts.
+- The reachable attack surface, including relevant branches, collaborators, state, lifecycle, and concurrency behavior.
+- The test conventions and, for SOLO execution, the validation command needed for this task.
+
+Resolve any remaining factual gap with targeted discovery. If expected behavior remains unclear, return `NEED:` rather than deriving expectations from current implementation behavior by default.
+
 ### General Test Structure Guidelines
-- Use the project's test framework (discovered in Phase 1)
+- Use the project's test framework (from supplied context, the loaded skill, or targeted setup discovery)
 - Follow Arrange-Act-Assert (AAA) pattern
 - Use descriptive test names that explain the behavior being tested
 - Use appropriate test doubles (mocks, fakes, stubs) based on project conventions
@@ -504,7 +517,7 @@ The primary agent will inform you whether you are running **SOLO** or **PARALLEL
 
 **If running SOLO:**
 
-1. **Compile tests**
+1. **Compile tests** using the verified command supplied in `Context refs` when available; otherwise discover the project's test compilation command from build files or existing test scripts
 
 2. **Handle compiler errors:**
    - **Errors in your test files or related test doubles** → fix them, then retry compilation
@@ -623,7 +636,7 @@ VALIDATION: <command> <result>, ...
 
 # Subagent Delegation Guidelines
 
-You have access to specialized subagents via the Task tool. You should delegate work to subagents when it improves efficiency, leverages specialized expertise, or allows parallel execution of independent tasks.
+You have access to specialized subagents via the `subagent` tool. You should delegate work to subagents when it improves efficiency, leverages specialized expertise, or allows parallel execution of independent tasks.
 
 ## Key Properties of Subagents
 
